@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+*.log
+
+# Node
+dashboard/node_modules/
+dashboard/.vite/
+dashboard/dist/
+
+# Mac
+.DS_Store
+
+# Docker volumes
+*.pid
+*.db
+*.sqlite
