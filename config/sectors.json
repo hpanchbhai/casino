@@ -1,0 +1,8 @@
+{
+  "energy": [
+    "XOM", "CVX", "SLB", "COP", "EOG", "PSX", "VLO", "MPC", "HAL", "BKR"
+  ],
+  "aiSector": [
+    "NVDA", "MSFT", "GOOGL", "AMZN", "META", "AVGO", "SMCI", "AMD", "TSLA", "PLTR"
+  ]
+}
