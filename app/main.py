@@ -175,7 +175,7 @@ async def latest_close(symbol: str) -> Dict[str, Any]:
 @app.get("/pricebars/{symbol}")
 async def pricebars(
     symbol: str,
-    days: int = Query(90, ge=1, le=3650),  # 1 day - 10 years
+    days: int = Query(365, ge=1, le=3650),  # Default 1 year
 ) -> List[Dict[str, Any]]:
     s = symbol.upper().strip()
     since = _days_ago(days)
@@ -194,7 +194,7 @@ async def pricebars(
 @app.get("/pricebars/{symbol}/deltas")
 async def price_deltas(
     symbol: str,
-    days: int = Query(90, ge=2, le=3650),
+    days: int = Query(365, ge=2, le=3650),  # Default 1 year
 ) -> List[Dict[str, Any]]:
     # Compute daily pct change vs previous close
     bars = await pricebars(symbol, days)

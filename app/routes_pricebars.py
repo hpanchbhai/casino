@@ -60,7 +60,7 @@ def _iso(d: dt.date | dt.datetime | None) -> Optional[str]:
 @router.get("/pricebars/{symbol}")
 async def get_pricebars(
     symbol: str,
-    days: int = Query(default=120, ge=1, le=3650, description="Number of most recent days to return"),
+    days: int = Query(default=1825, ge=1, le=3650, description="Number of most recent days to return"),
 ) -> List[Dict]:
     """
     Return OHLCV rows for `symbol` over the last `days`.
