@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stocks RSI Dashboard</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="page-layout">
+    <div class="container">
+        <header class="header">
+            <div class="header-left">
+                <h1>📈 Stocks RSI Dashboard</h1>
+                <p class="subtitle">Multi-Index Relative Strength Index Analysis</p>
+            </div>
+            <div class="header-right">
+                <span id="last-updated" class="last-updated"></span>
+                <button id="theme-toggle" class="theme-toggle" title="Toggle light/dark theme">🌙</button>
+                <button id="refresh-btn" class="refresh-btn" onclick="refreshAll()">
+                    🔄 Refresh All
+                </button>
+            </div>
+        </header>
+
+        <!-- Index Tabs -->
+        <nav class="index-tabs" id="index-tabs">
+            <!-- Tabs will be populated by JS -->
+        </nav>
+
+        <!-- Tab Content Container -->
+        <div id="tab-content"></div>
+
+        <!-- Chart Widget: Searchable ticker + timeframe selectors + line chart -->
+        <section id="chart-widget" class="chart-widget">
+            <div class="chart-header">
+                <div class="chart-inputs">
+                    <input id="ticker-input" type="text" placeholder="Enter ticker (e.g. AAPL)" />
+                    <button id="fetch-chart-btn">Show</button>
+                    <button id="watchlist-add-btn" title="Add to Watchlist">⭐ Watchlist</button>
+                </div>
+                <div class="chart-header-right">
+                    <div class="timeframe-buttons">
+                        <button class="tf-btn active" data-period="1mo">1M</button>
+                        <button class="tf-btn" data-period="3mo">3M</button>
+                        <button class="tf-btn" data-period="6mo">6M</button>
+                        <button class="tf-btn" data-period="1y">1Y</button>
+                        <button class="tf-btn" data-period="5y">5Y</button>
+                    </div>
+                    <button id="chart-widget-toggle" class="chart-widget-toggle" title="Expand / Collapse chart">
+                        <span class="chart-toggle-arrow">▲</span>
+                        <span class="chart-toggle-label">Hide</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Collapsible body -->
+            <div id="chart-widget-body" class="chart-widget-body">
+            <div class="chart-controls">
+                <span class="controls-label">Overlays:</span>
+                <label class="sma-option"><input type="checkbox" id="sma-50" /> SMA 50</label>
+                <label class="sma-option"><input type="checkbox" id="sma-100" /> SMA 100</label>
+                <label class="sma-option"><input type="checkbox" id="sma-200" /> SMA 200</label>
+            </div>
+            <div id="sma-warning" class="sma-warning hidden"></div>
+            <div class="chart-area">
+                <div id="chart-loading" class="chart-loading hidden">Loading chart…</div>
+                <div id="chart-error" class="chart-error hidden"></div>
+                <canvas id="price-chart" aria-label="Price chart" role="img"></canvas>
+            </div>
+            <section class="options-section">
+                <div class="options-header">
+                    <h3>Top 5 Options</h3>
+                    <div class="options-controls">
+                        <button class="opt-term-btn" data-term="short">Short Term</button>
+                        <button class="opt-term-btn" data-term="medium">Medium Term</button>
+                        <button class="opt-term-btn active" data-term="long">Long Term</button>
+                        <span class="sort-separator">|</span>
+                        <label class="sort-label" for="options-sort">Sort by</label>
+                        <select id="options-sort" class="options-sort-select">
+                            <option value="volume" selected>Volume</option>
+                            <option value="open_interest">Open Interest</option>
+                            <option value="expiry">Expiry (Nearest)</option>
+                            <option value="iv">Implied Volatility</option>
+                            <option value="spread">Tightest Spread</option>
+                        </select>
+                    </div>
+                    <span id="options-meta" class="options-meta"></span>
+                </div>
+                <div id="options-error" class="options-error hidden"></div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Expiry</th>
+                                <th>Strike</th>
+                                <th>Last</th>
+                                <th>Bid</th>
+                                <th>Ask</th>
+                                <th>Volume</th>
+                                <th>Open Int</th>
+                                <th>IV %</th>
+                                <th>Delta</th>
+                                <th>Theta</th>
+                                <th>Spread</th>
+                            </tr>
+                        </thead>
+                        <tbody id="options-body"></tbody>
+                    </table>
+                </div>
+                <p class="options-note" id="options-note"></p>
+            </section>
+
+            <!-- Institutional Ownership -->
+            <section class="ownership-section">
+                <div class="ownership-header">
+                    <h3>🏦 Institutional Ownership</h3>
+                    <span id="ownership-meta" class="ownership-meta"></span>
+                </div>
+                <div id="ownership-error" class="options-error hidden"></div>
+                <div id="ownership-loading" class="panel-loading hidden">
+                    <div class="spinner"></div>
+                    <p>Fetching ownership data…</p>
+                </div>
+                <div id="ownership-content" class="hidden">
+                    <!-- Summary pills -->
+                    <div id="ownership-summary" class="ownership-summary"></div>
+
+                    <!-- Tab bar -->
+                    <div class="own-tabs">
+                        <button class="own-tab-btn active" data-own-tab="institutional">🏦 Institutional</button>
+                        <button class="own-tab-btn" data-own-tab="mutualfunds">📊 Mutual Funds</button>
+                        <button class="own-tab-btn" data-own-tab="whales">🐋 Tracked Whales</button>
+                        <button class="own-tab-btn" data-own-tab="activity">📈 Recent Activity</button>
+                    </div>
+
+                    <!-- Institutional panel -->
+                    <div id="own-panel-institutional" class="own-tab-panel">
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Institution</th>
+                                        <th>Shares</th>
+                                        <th>% of Float</th>
+                                        <th>Value</th>
+                                        <th>As of</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ownership-inst-body"></tbody>
+                            </table>
+                        </div>
+                        <p class="options-note">Source: Yahoo Finance institutional holder reports. Cached 1 hour.</p>
+                    </div>
+
+                    <!-- Mutual Funds panel -->
+                    <div id="own-panel-mutualfunds" class="own-tab-panel hidden">
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Fund</th>
+                                        <th>Shares</th>
+                                        <th>% of Float</th>
+                                        <th>Value</th>
+                                        <th>As of</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ownership-mf-body"></tbody>
+                            </table>
+                        </div>
+                        <p class="options-note">Source: Yahoo Finance mutual-fund holder reports. Cached 1 hour.</p>
+                    </div>
+
+                    <!-- Tracked Whales panel -->
+                    <div id="own-panel-whales" class="own-tab-panel hidden">
+                        <div id="ownership-whale-loading" class="panel-loading hidden">
+                            <div class="spinner"></div>
+                            <p>Scanning 13F filings for this ticker…</p>
+                        </div>
+                        <div id="ownership-whale-error" class="options-error hidden"></div>
+                        <div id="ownership-whale-content">
+                            <div class="table-wrapper">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Investor</th>
+                                            <th>Fund</th>
+                                            <th>Shares</th>
+                                            <th>Value</th>
+                                            <th>% of Portfolio</th>
+                                            <th>Quarter-end Price</th>
+                                            <th>As of (Quarter)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="ownership-whale-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <p class="options-note">Source: SEC EDGAR 13F-HR filings for tracked whale investors. Cached 1 hour.</p>
+                    </div>
+
+                    <!-- Recent Activity panel -->
+                    <div id="own-panel-activity" class="own-tab-panel hidden">
+                        <div id="ownership-activity-loading" class="panel-loading hidden">
+                            <div class="spinner"></div>
+                            <p>Scanning 13F filings across institutions &amp; whales…</p>
+                        </div>
+                        <div id="ownership-activity-error" class="options-error hidden"></div>
+                        <div id="ownership-activity-content" class="hidden">
+                            <!-- Buyers -->
+                            <div class="activity-section">
+                                <h4 class="activity-section-title">🟢 Added / New Positions</h4>
+                                <div class="table-wrapper">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Institution / Fund</th>
+                                                <th>Action</th>
+                                                <th>Shares Δ</th>
+                                                <th>Value Δ</th>
+                                                <th>% Chg</th>
+                                                <th>Curr. Shares</th>
+                                                <th>Curr. Value</th>
+                                                <th>Price/sh</th>
+                                                <th>Quarter</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ownership-activity-buys"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <!-- Sellers -->
+                            <div class="activity-section">
+                                <h4 class="activity-section-title">🔴 Reduced / Exited Positions</h4>
+                                <div class="table-wrapper">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Institution / Fund</th>
+                                                <th>Action</th>
+                                                <th>Shares Δ</th>
+                                                <th>Value Δ</th>
+                                                <th>% Chg</th>
+                                                <th>Curr. Shares</th>
+                                                <th>Curr. Value</th>
+                                                <th>Price/sh</th>
+                                                <th>Quarter</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="ownership-activity-sells"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="options-note">Source: SEC EDGAR 13F-HR filings — whales + 16 major institutions (Blackrock, Vanguard, JPMorgan, Goldman, Citi, UBS, Deutsche Bank &amp; more). Cached 6 hours.</p>
+                    </div>
+                </div>
+            </section>
+        </div><!-- /.chart-widget-body -->
+        </section>
+
+        <!-- Earnings Calendar Panel -->
+        <section id="panel-cal" class="tab-panel cal-panel">
+            <div class="cal-header">
+                <div class="cal-title-row">
+                    <h2>📅 Earnings Calendar</h2>
+                    <span id="cal-meta" class="cal-meta"></span>
+                </div>
+                <div class="cal-controls">
+                    <div class="cal-week-group">
+                        <span class="controls-label">Week:</span>
+                        <button class="cal-week-btn active" data-week="next">Next Week</button>
+                        <button class="cal-week-btn" data-week="this">This Week</button>
+                    </div>
+                    <div class="cal-univ-group">
+                        <span class="controls-label">Universe:</span>
+                        <button class="cal-univ-btn active" data-universe="sp500">🏛️ S&amp;P 500</button>
+                        <button class="cal-univ-btn" data-universe="nasdaq100">💻 NASDAQ</button>
+                        <button class="cal-univ-btn" data-universe="dowjones">🏭 Dow 30</button>
+                    </div>
+                    <button id="cal-share-wa-btn" class="cal-share-btn" title="Share to WhatsApp">📱 Share to WhatsApp</button>
+                    <button id="cal-image-btn" class="cal-image-btn" title="Generate shareable image">🖼️ Generate Image</button>
+                    <button id="cal-refresh-btn" class="earnings-refresh-btn" title="Reload">🔄</button>
+                </div>
+            </div>
+            <div id="cal-loading" class="panel-loading hidden">
+                <div class="spinner"></div>
+                <p>Loading earnings calendar…</p>
+            </div>
+            <div id="cal-error" class="options-error hidden"></div>
+            <div id="cal-grid" class="cal-grid hidden"></div>
+            <p class="options-note" id="cal-note"></p>
+        </section>
+
+        <!-- Watchlist Panel -->
+        <section id="panel-watchlist" class="tab-panel watchlist-panel">
+            <div class="watchlist-header">
+                <h2>⭐ My Watchlist</h2>
+                <p class="watchlist-hint">Add stocks using the <strong>⭐ Watchlist</strong> button in the chart widget below.</p>
+            </div>
+            <div id="watchlist-empty" class="watchlist-empty hidden">
+                <span>No stocks yet — search a ticker and click <strong>⭐ Watchlist</strong> to add one.</span>
+            </div>
+            <div id="watchlist-grid" class="watchlist-grid"></div>
+        </section>
+
+        <!-- Earnings Widget -->
+        <section id="panel-earnings" class="tab-panel earnings-panel">
+            <!-- Header row -->
+            <div class="earnings-header">
+                <div class="earnings-title-row">
+                    <h2>🧾 Earnings This Week</h2>
+                    <span id="earnings-meta" class="earnings-meta"></span>
+                </div>
+                <!-- Controls row -->
+                <div class="earnings-controls">
+                    <div class="earnings-universe-group">
+                        <span class="controls-label">Universe:</span>
+                        <button class="earn-univ-btn active" data-universe="watchlist">⭐ Watchlist</button>
+                        <button class="earn-univ-btn" data-universe="sp500">🏛️ S&amp;P 500</button>
+                        <button class="earn-univ-btn" data-universe="nasdaq100">💻 NASDAQ</button>
+                        <button class="earn-univ-btn" data-universe="dowjones">🏭 Dow 30</button>
+                    </div>
+                    <div class="earnings-sort-group">
+                        <span class="sort-label">Sort by</span>
+                        <select id="earnings-sort" class="options-sort-select">
+                            <option value="earnings_date">Earnings Date</option>
+                            <option value="rsi_asc">RSI ↑ (Oversold first)</option>
+                            <option value="rsi_desc">RSI ↓ (Overbought first)</option>
+                            <option value="post_move">Biggest Past Move</option>
+                            <option value="ticker">Ticker A-Z</option>
+                        </select>
+                        <button id="earnings-refresh-btn" class="earnings-refresh-btn" title="Reload">🔄</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading / error states -->
+            <div id="earnings-loading" class="panel-loading">
+                <div class="spinner"></div>
+                <p>Scanning earnings calendar…</p>
+            </div>
+            <div id="earnings-error" class="options-error hidden"></div>
+            <div id="earnings-empty" class="earnings-empty hidden">📭 No earnings found for this week in the selected universe.</div>
+
+            <!-- Table -->
+            <div id="earnings-table-wrap" class="table-wrapper hidden">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Stock</th>
+                            <th>Date</th>
+                            <th>Price</th>
+                            <th>RSI (14)</th>
+                            <th>Signal</th>
+                            <th>Past EPS / Rev</th>
+                            <th>Guidance</th>
+                            <th>Post-Earn Move</th>
+                        </tr>
+                    </thead>
+                    <tbody id="earnings-body"></tbody>
+                </table>
+            </div>
+
+            <!-- ── Post-Earnings Price Moves ── -->
+            <div class="earn-hist-section">
+                <div class="earn-hist-header">
+                    <h3>📊 Post-Earnings Price Moves — Historical Analysis</h3>
+                    <div class="earn-hist-controls">
+                        <div class="earn-hist-input-wrap">
+                            <input type="text" id="earn-hist-ticker" class="earn-hist-input"
+                                placeholder="Enter ticker (e.g. AAPL, NVDA, TSLA)"
+                                maxlength="12" autocomplete="off" spellcheck="false">
+                            <button id="earn-hist-search-btn" class="earn-hist-btn">🔍 Analyze</button>
+                        </div>
+                        <div id="earn-hist-quick-btns" class="earn-hist-quick-btns">
+                            <!-- Quick-pick buttons injected by JS from this week's earnings list -->
+                        </div>
+                    </div>
+                </div>
+
+                <div id="earn-hist-loading" class="panel-loading hidden">
+                    <div class="spinner"></div>
+                    <p>Loading earnings history…</p>
+                </div>
+                <div id="earn-hist-error" class="options-error hidden"></div>
+
+                <div id="earn-hist-result" class="hidden">
+                    <div class="earn-hist-summary" id="earn-hist-summary"></div>
+                    <div class="table-wrapper">
+                        <table id="earn-hist-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Earnings Date</th>
+                                    <th class="has-tooltip">Pre-Earnings Close
+                                        <span class="col-tooltip"><b>Pre-market earnings:</b> prior day's close.<br><b>Post-market earnings:</b> earnings day's close (market hasn't reacted yet).</span>
+                                    </th>
+                                    <th class="has-tooltip">Post-Earnings Close
+                                        <span class="col-tooltip"><b>Pre-market earnings:</b> earnings day's close (market absorbs results).<br><b>Post-market earnings:</b> next trading day's close (gap open).</span>
+                                    </th>
+                                    <th>Move ($)</th>
+                                    <th>Move (%)</th>
+                                    <th>Direction</th>
+                                    <th class="has-tooltip">5-Day Close
+                                        <span class="col-tooltip">Closing price 5 trading days after the post-earnings close, shown alongside the drift % from the post-earnings close.</span>
+                                    </th>
+                                    <th class="has-tooltip">Guidance Signal
+                                        <span class="col-tooltip">Sourced from the company's SEC 8-K earnings press release filed around each earnings date.<br><br>🚀 <b>Raised</b> — Company raised guidance<br>✅ <b>Reaffirmed</b> — Guidance maintained<br>✅ <b>In-Line</b> — Met expectations<br>⚠️ <b>Cautious</b> — Cautious tone / headwinds mentioned<br>✂️ <b>Lowered</b> — Guidance cut<br>↔ <b>Mixed</b> — No clear direction<br><br>If no 8-K is found, falls back to <i>market-implied</i> signal (EPS beat/miss + 5-day drift).<br>Hover over any badge to read the actual press release excerpt.</span>
+                                    </th>
+                                    <th>EPS Actual</th>
+                                    <th>EPS Estimate</th>
+                                    <th>Beat / Miss</th>
+                                </tr>
+                            </thead>
+                            <tbody id="earn-hist-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>        <!-- 13F Whales Widget -->
+        <section id="panel-whales" class="tab-panel whales-panel">
+            <div class="whales-header">
+                <div class="earnings-title-row">
+                    <h2>🐋 13F Filings — Smart Money</h2>
+                    <span id="whale-meta" class="earnings-meta"></span>
+                </div>
+                <!-- View toggle -->
+                <div class="whale-view-toggle">
+                    <button class="whale-view-btn active" id="whale-view-individual">📋 Individual</button>
+                    <button class="whale-view-btn" id="whale-view-consensus">🔥 Consensus Heatmap</button>
+                </div>
+                <!-- Investor selector -->
+                <div id="whale-selector" class="whale-selector">
+                    <!-- populated by JS from /api/whales -->
+                </div>
+                <!-- Quarter selector (populated after investor chosen) -->
+                <div id="whale-quarter-selector" class="whale-quarter-selector">
+                    <!-- populated by JS from /api/whales/<key>/quarters -->
+                </div>
+            </div>
+
+            <!-- ── Individual view states ── -->
+            <div id="whale-loading" class="panel-loading hidden">
+                <div class="spinner"></div>
+                <p>Fetching 13F data from SEC EDGAR…</p>
+            </div>
+            <div id="whale-error" class="options-error hidden"></div>
+
+            <!-- Info bar + tables -->
+            <div id="whale-content" class="hidden">
+                <div class="whale-info-bar">
+                    <span id="whale-fund-name" class="whale-info-item whale-fund"></span>
+                    <span id="whale-period" class="whale-info-item"></span>
+                    <span id="whale-positions" class="whale-info-item"></span>
+                    <span id="whale-portfolio-val" class="whale-info-item"></span>
+                    <span id="whale-updated" class="whale-info-item whale-ts"></span>
+                </div>
+
+                <!-- Two-column: buys | sells -->
+                <div class="whale-tables-grid">
+                    <section class="table-section whale-buys-section">
+                        <h3>🟢 Top 10 Buys / New Positions</h3>
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Company</th>
+                                        <th>Action</th>
+                                        <th>Shares Δ</th>
+                                        <th>Value Δ</th>
+                                        <th>% Chg</th>
+                                        <th>Price/sh</th>
+                                        <th>Now</th>
+                                        <th>↩ Ret</th>
+                                        <th>Curr. Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="whale-buys-body"></tbody>
+                            </table>
+                        </div>
+                    </section>
+                    <section class="table-section whale-sells-section">
+                        <h3>🔴 Top 10 Sells / Exits</h3>
+                        <div class="table-wrapper">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Company</th>
+                                        <th>Action</th>
+                                        <th>Shares Δ</th>
+                                        <th>Value Δ</th>
+                                        <th>% Chg</th>
+                                        <th>Price/sh</th>
+                                        <th>Now</th>
+                                        <th>↩ Ret</th>
+                                        <th>Curr. Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="whale-sells-body"></tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+                <p class="options-note">Source: SEC EDGAR 13F-HR filings. Data reflects reported quarter-end holdings. Cached 1 hour.</p>
+            </div>
+
+            <!-- ── Consensus Heatmap view ── -->
+            <div id="whale-consensus-view" class="hidden">
+                <div id="consensus-loading" class="panel-loading">
+                    <div class="spinner"></div>
+                    <p>Fetching latest 13F filings from all smart-money investors…<br>
+                    <small style="color:var(--text-muted)">This fetches 8 funds in parallel from SEC EDGAR — ~10–30s first load, then cached 6 hours.</small></p>
+                </div>
+                <div id="consensus-error" class="options-error hidden"></div>
+                <div id="consensus-content" class="hidden">
+                    <!-- Quarter label + meta -->
+                    <div class="consensus-meta-bar">
+                        <span id="consensus-quarter-label" class="consensus-quarter"></span>
+                        <span id="consensus-meta-text" class="earnings-meta"></span>
+                    </div>
+                    <!-- Signal pills: stocks with cross-fund consensus -->
+                    <div class="consensus-signal-section">
+                        <div class="consensus-signal-label">🎯 Cross-Fund Consensus Signals</div>
+                        <div class="consensus-signal-row">
+                            <span class="csig-group-label csig-sell">🔴 Multiple Selling</span>
+                            <div id="consensus-sells-pills" class="csig-pills"></div>
+                        </div>
+                        <div class="consensus-signal-row">
+                            <span class="csig-group-label csig-buy">🟢 Multiple Buying</span>
+                            <div id="consensus-buys-pills" class="csig-pills"></div>
+                        </div>
+                    </div>
+                    <!-- Heatmap: one row per investor -->
+                    <div class="consensus-heatmap-label">
+                        Each tile = a position change &nbsp;·&nbsp;
+                        <span style="color:#ef4444">■ Red</span> = sold/reduced &nbsp;·&nbsp;
+                        <span style="color:#22c55e">■ Green</span> = bought/added &nbsp;·&nbsp;
+                        Darker = bigger move
+                    </div>
+                    <div id="consensus-heatmap" class="consensus-heatmap"></div>
+                    <!-- Consensus table -->
+                    <div class="cycle-table-section" style="margin-top:20px;">
+                        <div class="cycle-table-label">📋 All Tickers with 2+ Whales Involved</div>
+                        <div class="table-wrapper">
+                            <table id="consensus-table">
+                                <thead>
+                                    <tr>
+                                        <th>Ticker</th>
+                                        <th>Signal</th>
+                                        <th>Conviction</th>
+                                        <th>Buyers</th>
+                                        <th>Sellers</th>
+                                        <th>Total Whales</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="consensus-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Politician Trades Widget -->
+        <section id="panel-pol-trades" class="tab-panel pol-trades-panel">
+            <div class="pol-trades-header">
+                <div class="earnings-title-row">
+                    <h2>🏛️ STOCK Act Disclosures — Politician Trades</h2>
+                    <span id="pol-trades-meta" class="earnings-meta"></span>
+                </div>
+                <!-- Live poller status bar -->
+                <div id="ptr-live-bar" class="ptr-live-bar hidden">
+                    <span class="ptr-live-dot"></span>
+                    <span id="ptr-live-status-text">Monitoring for new filings…</span>
+                    <span id="ptr-live-new-badge" class="ptr-live-new-badge hidden"></span>
+                </div>
+                <div class="pol-trades-controls">
+                    <!-- Year selector -->
+                    <div class="pol-year-group">
+                        <label>Year</label>
+                        <select id="pol-year-select">
+                            <option value="2026">2026</option>
+                            <option value="2025">2025</option>
+                            <option value="2024">2024</option>
+                        </select>
+                    </div>
+                    <!-- Month multi-select -->
+                    <div class="pol-month-group">
+                        <label>Month</label>
+                        <div id="pol-month-pills" class="pol-month-pills">
+                            <button class="pol-month-btn active" data-month="0">All</button>
+                            <button class="pol-month-btn" data-month="1">Jan</button>
+                            <button class="pol-month-btn" data-month="2">Feb</button>
+                            <button class="pol-month-btn" data-month="3">Mar</button>
+                            <button class="pol-month-btn" data-month="4">Apr</button>
+                            <button class="pol-month-btn" data-month="5">May</button>
+                            <button class="pol-month-btn" data-month="6">Jun</button>
+                            <button class="pol-month-btn" data-month="7">Jul</button>
+                            <button class="pol-month-btn" data-month="8">Aug</button>
+                            <button class="pol-month-btn" data-month="9">Sep</button>
+                            <button class="pol-month-btn" data-month="10">Oct</button>
+                            <button class="pol-month-btn" data-month="11">Nov</button>
+                            <button class="pol-month-btn" data-month="12">Dec</button>
+                        </div>
+                    </div>
+                    <!-- Trade type toggle -->
+                    <div class="pol-type-group">
+                        <button class="pol-type-btn active" data-type="all">All</button>
+                        <button class="pol-type-btn" data-type="purchase">Buys</button>
+                        <button class="pol-type-btn" data-type="sale">Sells</button>
+                    </div>
+                    <!-- Asset type filter -->
+                    <div class="pol-asset-group">
+                        <button class="pol-asset-btn active" data-asset="tradeable">🟢 Tradeable</button>
+                        <button class="pol-asset-btn" data-asset="stock">📈 Stocks</button>
+                        <button class="pol-asset-btn" data-asset="option">🎯 Options</button>
+                        <button class="pol-asset-btn" data-asset="all">All Assets</button>
+                    </div>
+                    <!-- Search -->
+                    <div class="pol-search-group">
+                        <input id="pol-search" type="text" placeholder="Search name or ticker…">
+                    </div>
+                    <!-- Refresh -->
+                    <button id="pol-refresh-btn" class="pol-refresh-btn">↻ Refresh</button>
+                </div>
+            </div>
+
+            <div id="pol-trades-loading" class="panel-loading hidden">
+                <div class="spinner"></div>
+                <p>Fetching House Clerk index &amp; parsing PTR filings… <span style="color:#94a3b8;font-size:0.8rem;">(new filings may take a few hours to appear in the index)</span></p>
+            </div>
+            <div id="pol-trades-error" class="options-error hidden"></div>
+
+            <!-- Suspicious alerts banner -->
+            <div id="pol-suspicious-alerts" class="pol-suspicious-section hidden">
+                <div class="pol-suspicious-header">
+                    <span class="pol-suspicious-icon">🚨</span>
+                    <strong>Suspicious Option Trades</strong>
+                    <span id="pol-suspicious-count" class="pol-suspicious-count"></span>
+                    <span class="pol-suspicious-sub">Options ≥ $50k by members of key committees</span>
+                </div>
+                <div id="pol-suspicious-cards" class="pol-suspicious-cards"></div>
+            </div>
+
+            <!-- Stats bar -->
+            <div id="pol-trades-stats" class="pol-stats-bar hidden">
+                <span id="pol-stat-total" class="pol-stat-item"></span>
+                <span id="pol-stat-buys" class="pol-stat-item pol-buy-stat"></span>
+                <span id="pol-stat-sells" class="pol-stat-item pol-sell-stat"></span>
+                <span id="pol-stat-members" class="pol-stat-item"></span>
+            </div>
+
+            <!-- Table -->
+            <div id="pol-trades-content" class="hidden">
+                <div class="table-wrapper">
+                    <table id="pol-trades-table">
+                        <thead>
+                            <tr>
+                                <th class="pol-th" data-col="flag">⚑</th>
+                                <th class="pol-th" data-col="idx">#</th>
+                                <th class="pol-th sortable" data-col="member">Politician <span class="sort-arrow">↕</span></th>
+                                <th class="pol-th sortable" data-col="state_dist">State / Dist <span class="sort-arrow">↕</span></th>
+                                <th class="pol-th sortable" data-col="asset">Asset <span class="sort-arrow">↕</span></th>
+                                <th class="pol-th sortable" data-col="ticker">Ticker <span class="sort-arrow">↕</span></th>
+                                <th class="pol-th sortable" data-col="asset_type">Asset Type <span class="sort-arrow">↕</span></th>
+                                <th class="pol-th sortable" data-col="owner">Owner <span class="sort-arrow">↕</span></th>
+                                <th class="pol-th sortable" data-col="type">Type <span class="sort-arrow">↕</span></th>
+                                <th class="pol-th sortable" data-col="tx_date">Tx Date <span class="sort-arrow">↕</span></th>
+                                <th class="pol-th sortable" data-col="notif_date">Notif. Date <span class="sort-arrow">↕</span></th>
+                                <th class="pol-th sortable" data-col="amount">Amount Range <span class="sort-arrow">↕</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="pol-trades-body"></tbody>
+                    </table>
+                </div>
+                <p class="options-note pol-trades-note">Source: <a href="https://disclosures-clerk.house.gov/FinancialDisclosure" target="_blank" style="color:#60a5fa;">House Clerk STOCK Act disclosures</a> (disclosures-clerk.house.gov). House PTR filings only. Index updated in batches — very recent filings may have up to a few hours delay. Data cached 1 hour. Use ↻ Refresh to force re-fetch.</p>
+            </div>
+        </section>
+
+        <!-- Corporate Equity Holdings Widget -->
+        <section id="panel-corp-holdings" class="tab-panel corp-panel">
+            <div class="corp-header">
+                <div class="earnings-title-row">
+                    <h2>🏢 Corporate Equity Holdings</h2>
+                    <span id="corp-meta" class="earnings-meta"></span>
+                </div>
+                <!-- Company selector -->
+                <div id="corp-selector" class="corp-selector">
+                    <!-- populated by JS from /api/corp-holdings -->
+                </div>
+            </div>
+
+            <div id="corp-loading" class="panel-loading hidden">
+                <div class="spinner"></div>
+                <p>Fetching strategic holdings data…</p>
+            </div>
+            <div id="corp-error" class="options-error hidden"></div>
+
+            <div id="corp-content" class="hidden">
+                <!-- Info bar -->
+                <div class="corp-info-bar">
+                    <span id="corp-company"      class="corp-info-item corp-info-fund"></span>
+                    <span id="corp-active-count" class="corp-info-item"></span>
+                    <span id="corp-exited-count" class="corp-info-item"></span>
+                    <span id="corp-updated"      class="corp-info-item corp-info-ts"></span>
+                </div>
+
+                <!-- Filters -->
+                <div class="corp-filters">
+                    <div class="pol-year-group">
+                        <label>Year</label>
+                        <select id="corp-year-select">
+                            <option value="all">All Years</option>
+                            <option value="2025">2025</option>
+                            <option value="2024">2024</option>
+                            <option value="2023">2023</option>
+                            <option value="2022">2022</option>
+                            <option value="2021">2021</option>
+                            <option value="2020">2020</option>
+                        </select>
+                    </div>
+                    <div class="pol-month-group">
+                        <label>Month</label>
+                        <div id="corp-month-pills" class="pol-month-pills">
+                            <button class="corp-month-btn active" data-month="0">All</button>
+                            <button class="corp-month-btn" data-month="1">Jan</button>
+                            <button class="corp-month-btn" data-month="2">Feb</button>
+                            <button class="corp-month-btn" data-month="3">Mar</button>
+                            <button class="corp-month-btn" data-month="4">Apr</button>
+                            <button class="corp-month-btn" data-month="5">May</button>
+                            <button class="corp-month-btn" data-month="6">Jun</button>
+                            <button class="corp-month-btn" data-month="7">Jul</button>
+                            <button class="corp-month-btn" data-month="8">Aug</button>
+                            <button class="corp-month-btn" data-month="9">Sep</button>
+                            <button class="corp-month-btn" data-month="10">Oct</button>
+                            <button class="corp-month-btn" data-month="11">Nov</button>
+                            <button class="corp-month-btn" data-month="12">Dec</button>
+                        </div>
+                    </div>
+                    <div class="pol-search-group">
+                        <input id="corp-search" type="text" placeholder="Search company or ticker…">
+                    </div>
+                </div>
+
+                <!-- Activity timeline (all events sorted by date) -->
+                <section class="table-section corp-history-section">
+                    <h3 id="corp-history-title">📅 Transaction History</h3>
+                    <div class="table-wrapper">
+                        <table id="corp-history-table">
+                            <thead>
+                                <tr>
+                                    <th class="corp-th" data-col="idx">#</th>
+                                    <th class="corp-th corp-sortable" data-col="date" data-table="history">Date <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="target" data-table="history">Target Company <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="ticker" data-table="history">Ticker <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="action" data-table="history">Action <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="pct" data-table="history">% Owned <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="curr_price" data-table="history">Curr. Price <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th" data-col="note">Note</th>
+                                </tr>
+                            </thead>
+                            <tbody id="corp-history-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Active Holdings summary -->
+                <section class="table-section corp-active-section">
+                    <h3>📈 Active Holdings Summary</h3>
+                    <div class="table-wrapper">
+                        <table id="corp-active-table">
+                            <thead>
+                                <tr>
+                                    <th class="corp-th" data-col="idx">#</th>
+                                    <th class="corp-th corp-sortable" data-col="target" data-table="active">Target Company <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="ticker" data-table="active">Ticker <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="first_event_date" data-table="active">First Invested <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="last_event_date" data-table="active">Last Update <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="total_invested" data-table="active">Amount Invested <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="pct" data-table="active">% Owned <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="curr_price" data-table="active">Curr. Price <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th" data-col="status">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="corp-active-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Exited Positions -->
+                <section class="table-section corp-exited-section">
+                    <h3>📉 Exited / Reduced Positions</h3>
+                    <div class="table-wrapper">
+                        <table id="corp-exited-table">
+                            <thead>
+                                <tr>
+                                    <th class="corp-th" data-col="idx">#</th>
+                                    <th class="corp-th corp-sortable" data-col="target" data-table="exited">Target Company <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="ticker" data-table="exited">Ticker <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="first_event_date" data-table="exited">First Invested <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="last_event_date" data-table="exited">Exited / Reduced <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="total_invested" data-table="exited">Amount Invested <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th corp-sortable" data-col="curr_price" data-table="exited">Curr. Price <span class="sort-arrow">↕</span></th>
+                                    <th class="corp-th" data-col="status">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="corp-exited-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <p class="options-note">Source: SEC EDGAR SC 13D/13G filings, company press releases, and 10-K disclosures. Private holdings show disclosed investment amounts. Prices via Yahoo Finance.</p>
+            </div>
+        </section>
+
+        <!-- Sectors Panel -->
+        <section id="panel-sectors" class="tab-panel sectors-panel">
+            <div class="sectors-header">
+                <div class="earnings-title-row">
+                    <h2>📊 Sectors — Watchlist Overview</h2>
+                    <span id="sectors-meta" class="earnings-meta"></span>
+                </div>
+                <div class="sectors-controls">
+                    <!-- Sector pills populated by JS -->
+                    <div id="sector-pills" class="sector-pills"></div>
+                    <button id="sectors-refresh-btn" class="earnings-refresh-btn" title="Reload">🔄</button>
+                </div>
+            </div>
+
+            <div id="sectors-loading" class="panel-loading hidden">
+                <div class="spinner"></div>
+                <p>Fetching sector data…</p>
+            </div>
+            <div id="sectors-error" class="options-error hidden"></div>
+
+            <div id="sectors-content" class="hidden">
+                <div class="table-wrapper">
+                    <table id="sectors-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th data-col="ticker" class="sortable">Ticker <span class="sort-arrow">⇅</span></th>
+                                <th data-col="name" class="sortable">Company <span class="sort-arrow">⇅</span></th>
+                                <th data-col="price" class="sortable">Price <span class="sort-arrow">⇅</span></th>
+                                <th data-col="change_pct" class="sortable">Day Chg % <span class="sort-arrow">⇅</span></th>
+                                <th data-col="rsi" class="sortable">RSI (14) <span class="sort-arrow">⇅</span></th>
+                                <th>Signal</th>
+                                <th data-col="w52_high" class="sortable">52W High <span class="sort-arrow">⇅</span></th>
+                                <th data-col="w52_low" class="sortable">52W Low <span class="sort-arrow">⇅</span></th>
+                                <th data-col="pct_from_high" class="sortable">% from 52W High <span class="sort-arrow">⇅</span></th>
+                                <th data-col="ytd_high" class="sortable">YTD High <span class="sort-arrow">⇅</span></th>
+                                <th data-col="ytd_low" class="sortable">YTD Low <span class="sort-arrow">⇅</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="sectors-body"></tbody>
+                    </table>
+                </div>
+                <p class="options-note" id="sectors-note">Prices &amp; RSI via Yahoo Finance · 1Y history · Cached 15 min per sector</p>
+            </div>
+        </section>
+
+        <footer class="footer">
+            <p>Data sourced via Yahoo Finance. RSI calculated using 14-day period. 5-min cache. For educational purposes only — not financial advice.</p>
+        </footer>
+    </div>
+
+        <!-- Market Events Panel -->
+        <section id="panel-events" class="tab-panel events-panel">
+            <div class="events-panel-header">
+                <div class="earnings-title-row">
+                    <h2>📅 Market Events &amp; News</h2>
+                    <span id="events-updated" class="events-panel-updated"></span>
+                </div>
+            </div>
+
+            <div id="events-loading" class="panel-loading">
+                <div class="spinner"></div>
+                <p>Fetching events…</p>
+            </div>
+
+            <div id="events-content" class="events-panel-content hidden">
+                <div class="events-three-col">
+                    <!-- This week -->
+                    <div class="events-week-col">
+                        <div class="events-week-label" id="events-this-label">THIS WEEK</div>
+                        <div id="events-this-list" class="events-list"></div>
+                        <div id="events-this-empty" class="events-empty hidden">No events this week.</div>
+                    </div>
+                    <!-- Next week -->
+                    <div class="events-week-col">
+                        <div class="events-week-label" id="events-next-label">NEXT WEEK</div>
+                        <div id="events-next-list" class="events-list"></div>
+                        <div id="events-next-empty" class="events-empty hidden">No events next week.</div>
+                    </div>
+                    <!-- Live news -->
+                    <div class="events-week-col">
+                        <div class="events-week-label">
+                            🗞️ MARKET NEWS
+                            <span id="news-updated" class="events-news-ts"></span>
+                        </div>
+                        <div id="news-loading" class="events-news-loading">Loading…</div>
+                        <div id="news-list" class="events-list"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Political Cycle Chart Panel -->
+        <section id="panel-cycle" class="tab-panel cycle-panel">
+            <div class="cycle-header">
+                <div class="earnings-title-row">
+                    <h2>🗳️ Political Cycle Analysis</h2>
+                    <span id="cycle-meta" class="earnings-meta"></span>
+                </div>
+            </div>
+            <div class="cycle-controls">
+                <div class="cycle-ticker-row">
+                    <input id="cycle-ticker-input" type="text" placeholder="e.g. CRWD, AAPL, SPY…" class="cycle-ticker-input" autocomplete="off" />
+                    <button id="cycle-analyze-btn" class="cycle-analyze-btn">Analyze</button>
+                </div>
+                <div class="cycle-filter-pills" id="cycle-filter-pills">
+                    <button class="cycle-pill active" data-filter="election-midterm">🗳️⚖️ Elec + Midterm</button>
+                    <button class="cycle-pill" data-filter="election">🗳️ Election</button>
+                    <button class="cycle-pill" data-filter="midterm">⚖️ Midterm</button>
+                    <button class="cycle-pill" data-filter="post-election">🌱 Post-Election</button>
+                    <button class="cycle-pill" data-filter="pre-election">🔥 Pre-Election</button>
+                    <button class="cycle-pill" data-filter="all">🌐 All Years</button>
+                </div>
+            </div>
+            <p class="cycle-desc">
+                Monthly % return from Jan 1 of each year — normalised so any stock is comparable across years regardless of price.
+                Lines coloured by US political cycle type. Hover a month to see monthly High &amp; Low range.
+                Election years = presidential (every 4 yrs) · Midterm = 2 yrs after · Post/Pre = transition years.
+            </p>
+
+            <div id="cycle-loading" class="panel-loading hidden">
+                <div class="spinner"></div>
+                <p>Fetching historical data…</p>
+            </div>
+            <div id="cycle-error" class="options-error hidden"></div>
+
+            <div id="cycle-content" class="hidden">
+                <!-- Avg annual return per cycle type -->
+                <div id="cycle-summary-cards" class="cycle-summary-cards"></div>
+                <!-- Chart -->
+                <div class="cycle-chart-box">
+                    <div class="cycle-chart-label">% Return from Jan 1 &nbsp;·&nbsp; each line = one calendar year &nbsp;·&nbsp; dashed = cycle-type average</div>
+                    <div class="cycle-canvas-wrap">
+                        <canvas id="cycle-canvas"></canvas>
+                    </div>
+                </div>
+                <!-- Monthly breakdown table -->
+                <div class="cycle-table-section">
+                    <div class="cycle-table-label">Monthly % from Jan 1 — hover cells for monthly High / Low</div>
+                    <div class="table-wrapper">
+                        <table id="cycle-table">
+                            <thead><tr id="cycle-thead-row"></tr></thead>
+                            <tbody id="cycle-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Single-year price chart -->
+                <div class="cycle-year-section">
+                    <div class="cycle-year-header">
+                        <div class="cycle-chart-label">📅 MONTHLY PRICE VIEW — INSPECT ANY SINGLE YEAR</div>
+                        <div class="cycle-year-controls">
+                            <label class="cycle-year-label" for="cycle-year-select">Year</label>
+                            <select id="cycle-year-select" class="cycle-year-select"></select>
+                        </div>
+                    </div>
+                    <p class="cycle-desc" style="margin-bottom:14px;">
+                        Shaded band = monthly High → Low range &nbsp;·&nbsp; Solid line = month-end Close.
+                        Hover a month for exact prices.
+                    </p>
+                    <div class="cycle-canvas-wrap" style="height:360px;">
+                        <canvas id="cycle-year-canvas"></canvas>
+                    </div>
+                </div>
+
+                <!-- Multi-year normalized range chart -->
+                <div class="cycle-year-section">
+                    <div class="cycle-year-header">
+                        <div class="cycle-chart-label">📏 YEARLY RANGE NORMALIZED VIEW — 0 = ANNUAL LOW, 1 = ANNUAL HIGH</div>
+                        <div class="cycle-year-controls cycle-normalized-controls">
+                            <label class="cycle-year-label" for="cycle-normalized-year-select">Years</label>
+                            <select id="cycle-normalized-year-select" class="cycle-year-select cycle-normalized-year-select" multiple size="5"></select>
+                            <div class="cycle-normalized-actions">
+                                <button id="cycle-normalized-latest-btn" class="cycle-mini-btn" type="button">Latest 8</button>
+                                <button id="cycle-normalized-all-btn" class="cycle-mini-btn" type="button">All</button>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="cycle-desc" style="margin-bottom:14px;">
+                        Each selected year is scaled against its own January–December High/Low range. Month-end Close is plotted from 0 to 1.
+                    </p>
+                    <div class="cycle-canvas-wrap" style="height:380px;">
+                        <canvas id="cycle-normalized-canvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div> <!-- /.container -->
+
+</div> <!-- /.page-layout -->
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="script.js"></script>
+
+    <!-- Earnings Calendar Image Modal -->
+    <div id="cal-image-modal" class="cal-modal-overlay hidden">
+        <div class="cal-modal-box">
+            <div class="cal-modal-header">
+                <span class="cal-modal-title">📅 Earnings Calendar Image</span>
+                <button class="cal-modal-close" id="cal-modal-close-btn">✕</button>
+            </div>
+            <div class="cal-modal-body">
+                <div id="cal-img-loading" class="cal-img-loading">
+                    <div class="spinner"></div>
+                    <p>Generating image…</p>
+                </div>
+                <img id="cal-modal-img" class="cal-modal-img hidden" alt="Earnings Calendar" />
+            </div>
+            <div class="cal-modal-footer">
+                <a id="cal-download-btn" class="cal-download-btn" download="earnings_calendar.png">💾 Download Image</a>
+                <button id="cal-wa-image-btn" class="cal-share-btn">📱 Open WhatsApp</button>
+                <p class="cal-modal-hint">Save the image → share to your WhatsApp group</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

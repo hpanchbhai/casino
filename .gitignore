@@ -1,19 +1,7 @@
-# Python
 __pycache__/
 *.pyc
-.venv/
-.env
-*.log
-
-# Node
-dashboard/node_modules/
-dashboard/.vite/
-dashboard/dist/
-
-# Mac
+*.pyo
 .DS_Store
-
-# Docker volumes
-*.pid
-*.db
-*.sqlite
+server.log
+*.log
+.env
