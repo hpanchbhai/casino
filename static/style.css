@@ -786,6 +786,222 @@ tbody tr:last-child td {
     margin-top: 8px;
 }
 
+/* ── Index Addition Performance ───────────────────────────── */
+.index-adds-panel {
+    margin-top: 24px;
+}
+
+.index-adds-filter-block {
+    border-top: 1px solid var(--border);
+    margin-top: 22px;
+    padding-top: 20px;
+}
+
+.index-adds-filter-block h3 {
+    color: var(--text);
+    font-size: 1rem;
+    margin: 0 0 4px;
+}
+
+.index-adds-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 14px 0 18px;
+}
+
+.index-adds-input,
+.index-adds-select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 11px;
+    font-size: 0.85rem;
+    outline: none;
+    min-height: 38px;
+}
+
+.index-adds-input {
+    min-width: 130px;
+}
+
+.index-adds-select {
+    min-width: 170px;
+}
+
+.index-adds-input:focus,
+.index-adds-select:focus {
+    border-color: var(--blue);
+}
+
+.index-adds-summary {
+    margin-top: 4px;
+}
+
+.index-adds-chart-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin: 18px 0 22px;
+}
+
+.index-adds-chart-title {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+}
+
+.index-adds-chart-wrap {
+    position: relative;
+    height: 330px;
+}
+
+.index-adds-price-chart-wrap {
+    height: 280px;
+}
+
+.index-changes-widget {
+    margin-top: 18px;
+}
+
+.index-changes-header {
+    align-items: flex-start;
+    display: flex;
+    gap: 16px;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.index-changes-header h3 {
+    color: var(--text);
+    font-size: 1rem;
+    margin: 0 0 4px;
+}
+
+.index-changes-controls {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.index-year-multi {
+    position: relative;
+}
+
+.index-year-menu {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+    max-height: 260px;
+    min-width: 150px;
+    overflow: auto;
+    padding: 8px;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    z-index: 40;
+}
+
+.index-year-option {
+    align-items: center;
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    gap: 8px;
+    padding: 7px 8px;
+    white-space: nowrap;
+}
+
+.index-year-option:hover {
+    background: rgba(99, 102, 241, 0.12);
+}
+
+.index-changes-body {
+    display: grid;
+    gap: 10px;
+}
+
+.index-quarter-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.index-quarter-title {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+.index-change-columns {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.index-change-label {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.index-change-chip {
+    background: rgba(148, 163, 184, 0.1);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text);
+    display: inline-flex;
+    font-size: 0.78rem;
+    font-weight: 800;
+    gap: 6px;
+    margin: 0 6px 6px 0;
+    padding: 5px 8px;
+}
+
+.index-change-chip.add {
+    border-color: rgba(34, 197, 94, 0.35);
+}
+
+.index-change-chip.remove {
+    border-color: rgba(244, 63, 94, 0.35);
+}
+
+.index-change-date {
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+@media (max-width: 760px) {
+    .index-changes-header {
+        display: block;
+    }
+
+    .index-changes-controls {
+        justify-content: flex-start;
+        margin-top: 12px;
+    }
+
+    .index-change-columns {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* ── Institutional Ownership ─────────────────────────────── */
 .ownership-section {
     margin-top: 28px;

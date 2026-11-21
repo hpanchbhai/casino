@@ -23,3 +23,28 @@ Candidate later slices:
 - Earnings/calendar data
 - Price history and index membership
 - Options activity
+  - Retention/config requirement is recorded in `config/data_policy.json`.
+  - Store one row per contract in `option_contracts`.
+  - Append every observed quote/chain refresh into `option_quotes`.
+  - Mark contracts expired when expiration passes, but retain all historical quote rows.
+  - Keep Greeks/metrics when available: delta, gamma, theta, vega, rho, IV, bid, ask, open interest, volume.
+- Dashboard usage analytics
+  - Retention/config requirement is recorded in `config/data_policy.json`.
+  - Store sessions in `dashboard_sessions`.
+  - Append interactions into `dashboard_interaction_events`.
+  - Use this data to understand dashboard usage patterns, user behavior, feature adoption, and navigation flows.
+  - Keep logs privacy-conscious and avoid secrets or unnecessary raw personal data.
+- Price history ingestion
+  - Retention/config requirement is recorded in `config/data_policy.json`.
+  - Use `python -m etl.ingest_prices`.
+  - Initial run backfills daily OHLCV from `2000-01-01`.
+  - Later runs use `backfill_log.last_date` and fetch only missing rows.
+  - Use `--force-full` only for explicit full refreshes.
+- Index addition performance
+  - Requirement/config is recorded in `config/data_policy.json`.
+  - Saved addition events live in `index_additions`.
+  - Watchlist and current index memberships are synced into `watchlist_symbols` and `index_memberships`.
+  - Use `python -m etl.ingest_index_data` to refresh watchlist-wide index addition data.
+  - Tab and API support ticker-only lookup against saved records and filter index choices by current ticker membership.
+  - Tab and API support ad hoc ticker/index/date analysis as fallback.
+  - Next: add broader official/source coverage for Dow/Russell and any current-index members whose historical add dates are unavailable from the first source pass.

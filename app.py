@@ -1,11 +1,12 @@
 import math
 import os
 import re
+import sqlite3
 import time
 import threading
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from scipy.stats import norm
 import requests as _http
 
@@ -54,6 +55,460 @@ INDICES = {
 # ─── Simple in-memory cache ─────────────────────────────────
 _cache = {}
 CACHE_TTL = 300  # 5 minutes
+
+APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(APP_ROOT, "db", "stocks.db")
+
+HISTORY_PERIOD_DAYS = {
+    "5d": 7,
+    "1mo": 31,
+    "3mo": 93,
+    "6mo": 186,
+    "1y": 366,
+    "5y": 366 * 5,
+}
+
+INDEX_BENCHMARKS = {
+    "sp500": ("S&P 500", "SPY"),
+    "nasdaq100": ("NASDAQ 100", "QQQ"),
+    "russell2000": ("Russell 2000", "IWM"),
+    "dowjones": ("Dow Jones", "DIA"),
+    "spdr_etfs": ("SPDR & Major ETFs", None),
+    "custom": ("Custom Index / ETF", None),
+}
+
+INDEX_ADDITION_LIST_KEYS = ("sp500", "nasdaq100", "russell2000", "dowjones", "spdr_etfs")
+
+
+def get_db_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+def _index_definition_fallback(index_key: str) -> dict:
+    idx = INDICES.get(index_key, {})
+    name, benchmark = INDEX_BENCHMARKS.get(index_key, (idx.get("name", index_key.upper()), None))
+    return {
+        "key": index_key,
+        "name": name or idx.get("name", index_key.upper()),
+        "benchmark_ticker": benchmark,
+        "icon": idx.get("icon", ""),
+        "source_url": None,
+        "membership_source": "fallback",
+        "active": 1,
+    }
+
+
+def _index_definitions(conn: sqlite3.Connection | None = None, include_inactive: bool = False) -> list[dict]:
+    rows: list[sqlite3.Row] = []
+    close_conn = False
+    if os.path.exists(DB_PATH):
+        try:
+            if conn is None:
+                conn = get_db_conn()
+                close_conn = True
+            where = "1 = 1" if include_inactive else "active = 1"
+            rows = conn.execute(
+                f"""
+                SELECT key, name, benchmark_ticker, icon, source_url, membership_source, active
+                FROM index_definitions
+                WHERE {where}
+                ORDER BY name ASC
+                """
+            ).fetchall()
+        except sqlite3.Error:
+            rows = []
+        finally:
+            if close_conn and conn is not None:
+                conn.close()
+
+    if rows:
+        return [dict(row) for row in rows]
+    keys = [key for key in INDEX_ADDITION_LIST_KEYS if key in INDICES or key in INDEX_BENCHMARKS]
+    return [_index_definition_fallback(key) for key in keys]
+
+
+def _index_definition(index_key: str, conn: sqlite3.Connection | None = None) -> dict | None:
+    key = (index_key or "").strip().lower()
+    if not key:
+        return None
+    close_conn = False
+    if os.path.exists(DB_PATH):
+        try:
+            if conn is None:
+                conn = get_db_conn()
+                close_conn = True
+            row = conn.execute(
+                """
+                SELECT key, name, benchmark_ticker, icon, source_url, membership_source, active
+                FROM index_definitions
+                WHERE key = ? AND active = 1
+                """,
+                (key,),
+            ).fetchone()
+            if row:
+                return dict(row)
+        except sqlite3.Error:
+            pass
+        finally:
+            if close_conn and conn is not None:
+                conn.close()
+    if key in INDEX_BENCHMARKS or key in INDICES:
+        return _index_definition_fallback(key)
+    return None
+
+
+def _history_start_date(period: str) -> str | None:
+    if period in ("max", "all"):
+        return None
+    if period == "ytd":
+        return date(date.today().year, 1, 1).isoformat()
+    days = HISTORY_PERIOD_DAYS.get(period)
+    if not days:
+        return None
+    return (date.today() - timedelta(days=days)).isoformat()
+
+
+def _can_use_daily_history_db(period: str, interval: str) -> bool:
+    if interval not in ("1d", "1wk", "1w", "1week"):
+        return False
+    return period in HISTORY_PERIOD_DAYS or period in ("ytd", "max", "all")
+
+
+def _weekly_close_rows(rows: list[sqlite3.Row]) -> list[dict]:
+    weekly: dict[tuple[int, int], dict] = {}
+    for row in rows:
+        d = date.fromisoformat(row["date"])
+        year_week = d.isocalendar()[:2]
+        weekly[year_week] = {"date": row["date"], "close": round(float(row["close"]), 2)}
+    return list(weekly.values())
+
+
+def get_history_from_db(ticker: str, period: str, interval: str) -> list[dict]:
+    if not _can_use_daily_history_db(period, interval) or not os.path.exists(DB_PATH):
+        return []
+
+    start_date = _history_start_date(period)
+    where = "ticker = ? AND close IS NOT NULL"
+    params: list[str] = [ticker]
+    if start_date:
+        where += " AND date >= ?"
+        params.append(start_date)
+
+    with get_db_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT date, close
+            FROM daily_prices
+            WHERE {where}
+            ORDER BY date ASC
+            """,
+            params,
+        ).fetchall()
+
+    if not rows:
+        return []
+    if interval in ("1wk", "1w", "1week"):
+        return _weekly_close_rows(rows)
+    return [{"date": row["date"], "close": round(float(row["close"]), 2)} for row in rows]
+
+
+def _price_on_or_after(conn: sqlite3.Connection, ticker: str, target_date: str) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT date, close
+        FROM daily_prices
+        WHERE ticker = ? AND date >= ? AND close IS NOT NULL
+        ORDER BY date ASC
+        LIMIT 1
+        """,
+        (ticker, target_date),
+    ).fetchone()
+
+
+def _latest_price(conn: sqlite3.Connection, ticker: str) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT date, close
+        FROM daily_prices
+        WHERE ticker = ? AND close IS NOT NULL
+        ORDER BY date DESC
+        LIMIT 1
+        """,
+        (ticker,),
+    ).fetchone()
+
+
+def _return_between(start_price: float | None, end_price: float | None) -> float | None:
+    if start_price is None or end_price is None or start_price == 0:
+        return None
+    return round((end_price / start_price - 1) * 100, 2)
+
+
+def _annualized_return(start_price: float, end_price: float, days_held: int) -> float | None:
+    if start_price <= 0 or end_price <= 0 or days_held <= 0:
+        return None
+    return round(((end_price / start_price) ** (365 / days_held) - 1) * 100, 2)
+
+
+def _forward_return(conn: sqlite3.Connection, ticker: str, start_row: sqlite3.Row, days: int) -> float | None:
+    target = (date.fromisoformat(start_row["date"]) + timedelta(days=days)).isoformat()
+    end_row = _price_on_or_after(conn, ticker, target)
+    if not end_row:
+        return None
+    return _return_between(float(start_row["close"]), float(end_row["close"]))
+
+
+def _period_key(price_date: date, cadence: str) -> str:
+    if cadence == "monthly":
+        return price_date.strftime("%Y-%m")
+    if cadence == "quarterly":
+        quarter = (price_date.month - 1) // 3 + 1
+        return f"{price_date.year}-Q{quarter}"
+    return str(price_date.year)
+
+
+def _periodic_returns_since(conn: sqlite3.Connection, ticker: str, start_date: str) -> dict[str, list[dict]]:
+    rows = conn.execute(
+        """
+        SELECT date, close
+        FROM daily_prices
+        WHERE ticker = ? AND date >= ? AND close IS NOT NULL
+        ORDER BY date ASC
+        """,
+        (ticker, start_date),
+    ).fetchall()
+    if len(rows) < 2:
+        return {"monthly": [], "quarterly": [], "yearly": []}
+
+    output: dict[str, list[dict]] = {}
+    for cadence in ("monthly", "quarterly", "yearly"):
+        buckets: dict[str, dict] = {}
+        for row in rows:
+            d = date.fromisoformat(row["date"])
+            key = _period_key(d, cadence)
+            bucket = buckets.setdefault(
+                key,
+                {
+                    "period": key,
+                    "start_date": row["date"],
+                    "start_price": float(row["close"]),
+                    "end_date": row["date"],
+                    "end_price": float(row["close"]),
+                },
+            )
+            bucket["end_date"] = row["date"]
+            bucket["end_price"] = float(row["close"])
+
+        output[cadence] = [
+            {
+                **bucket,
+                "start_price": round(bucket["start_price"], 2),
+                "end_price": round(bucket["end_price"], 2),
+                "return_pct": _return_between(bucket["start_price"], bucket["end_price"]),
+            }
+            for bucket in buckets.values()
+        ]
+    return output
+
+
+def _price_series_since(conn: sqlite3.Connection, ticker: str, start_date: str) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT date, close
+        FROM daily_prices
+        WHERE ticker = ? AND date >= ? AND close IS NOT NULL
+        ORDER BY date ASC
+        """,
+        (ticker.upper(), start_date),
+    ).fetchall()
+    if not rows:
+        return []
+
+    start_price = float(rows[0]["close"])
+    return [
+        {
+            "date": row["date"],
+            "close": round(float(row["close"]), 2),
+            "return_pct": _return_between(start_price, float(row["close"])),
+        }
+        for row in rows
+    ]
+
+
+def _index_addition_record_from_request(args) -> dict | tuple[dict, int]:
+    ticker = args.get("ticker", "").strip().upper()
+    added_date = args.get("added_date", "").strip()
+    index_key = args.get("index_key", args.get("index", "custom")).strip().lower() or "custom"
+    index_def = _index_definition(index_key) or _index_definition_fallback(index_key)
+    index_name = index_def["name"]
+    default_benchmark = index_def.get("benchmark_ticker")
+    benchmark_ticker = args.get("benchmark_ticker", default_benchmark or "").strip().upper() or None
+
+    if not ticker:
+        return {"error": "ticker is required"}, 400
+    if not added_date:
+        return {"error": "added_date is required"}, 400
+    try:
+        date.fromisoformat(added_date)
+    except ValueError:
+        return {"error": "added_date must be YYYY-MM-DD"}, 400
+
+    return {
+        "ticker": ticker,
+        "index_key": index_key,
+        "index_name": args.get("index_name", index_name).strip() or index_name,
+        "benchmark_ticker": benchmark_ticker,
+        "added_date": added_date,
+        "source_note": "ad hoc",
+    }
+
+
+def _index_candidates_for_ticker(ticker: str) -> list[dict]:
+    ticker = ticker.upper().strip()
+    if os.path.exists(DB_PATH):
+        with get_db_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT
+                    im.index_key,
+                    COALESCE(id.name, im.index_key) AS index_name,
+                    id.benchmark_ticker,
+                    id.icon,
+                    CASE WHEN ia.ticker IS NULL THEN 0 ELSE 1 END AS has_addition_record
+                FROM index_memberships im
+                JOIN symbols s ON s.id = im.symbol_id
+                LEFT JOIN index_definitions id ON id.key = im.index_key
+                LEFT JOIN (
+                    SELECT DISTINCT ticker, index_key
+                    FROM index_additions
+                    WHERE active = 1
+                      AND added_date <= date('now')
+                ) ia ON ia.ticker = s.ticker AND ia.index_key = im.index_key
+                WHERE s.ticker = ?
+                  AND im.active = 1
+                  AND im.effective_to IS NULL
+                  AND COALESCE(id.active, 1) = 1
+                ORDER BY has_addition_record DESC, COALESCE(id.name, im.index_key)
+                """,
+                (ticker,),
+            ).fetchall()
+        matches = [
+            {
+                "key": row["index_key"],
+                "name": row["index_name"],
+                "icon": row["icon"] or INDICES.get(row["index_key"], {}).get("icon", ""),
+                "benchmark_ticker": row["benchmark_ticker"],
+                "has_addition_record": bool(row["has_addition_record"]),
+            }
+            for row in rows
+        ]
+        if matches:
+            return matches
+
+    matches: list[dict] = []
+    for key in INDEX_ADDITION_LIST_KEYS:
+        idx = INDICES.get(key)
+        if not idx:
+            continue
+        tickers = {t.upper() for t in load_tickers(idx["file"])}
+        if ticker in tickers:
+            index_name, benchmark = INDEX_BENCHMARKS.get(key, (idx["name"], None))
+            matches.append({
+                "key": key,
+                "name": index_name or idx["name"],
+                "icon": idx.get("icon", ""),
+                "benchmark_ticker": benchmark,
+            })
+    return matches
+
+
+def _saved_index_addition_records(
+    conn: sqlite3.Connection,
+    index_key: str,
+    limit: int,
+    ticker: str | None = None,
+    include_upcoming: bool = False,
+) -> list[dict]:
+    where = "active = 1"
+    params: list = []
+    if not include_upcoming:
+        where += " AND added_date <= ?"
+        params.append(date.today().isoformat())
+    if ticker:
+        where += " AND ticker = ?"
+        params.append(ticker.upper())
+    if index_key != "all":
+        where += " AND index_key = ?"
+        params.append(index_key)
+    params.append(limit)
+    rows = conn.execute(
+        f"""
+        SELECT ticker, index_key, index_name, benchmark_ticker, added_date, source_note
+        FROM index_additions
+        WHERE {where}
+        ORDER BY added_date DESC, ticker ASC
+        LIMIT ?
+        """,
+        params,
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def _build_index_addition_performance(conn: sqlite3.Connection, record: dict) -> dict:
+    ticker = record["ticker"].upper()
+    start_row = _price_on_or_after(conn, ticker, record["added_date"])
+    latest_row = _latest_price(conn, ticker)
+
+    item = dict(record)
+    item["ticker"] = ticker
+    item["data_source"] = "daily_prices"
+
+    if not start_row or not latest_row:
+        item["error"] = "No stored price data available for ticker/date."
+        return item
+
+    start_price = float(start_row["close"])
+    latest_price = float(latest_row["close"])
+    days_held = (date.fromisoformat(latest_row["date"]) - date.fromisoformat(start_row["date"])).days
+    total_return = _return_between(start_price, latest_price)
+
+    item.update({
+        "start_date": start_row["date"],
+        "latest_date": latest_row["date"],
+        "start_price": round(start_price, 2),
+        "latest_price": round(latest_price, 2),
+        "days_held": days_held,
+        "years_held": round(days_held / 365, 2) if days_held >= 0 else None,
+        "total_return_pct": total_return,
+        "annualized_return_pct": _annualized_return(start_price, latest_price, days_held),
+        "return_1m_pct": _forward_return(conn, ticker, start_row, 30),
+        "return_3m_pct": _forward_return(conn, ticker, start_row, 90),
+        "return_6m_pct": _forward_return(conn, ticker, start_row, 182),
+        "return_1y_pct": _forward_return(conn, ticker, start_row, 365),
+        "return_2y_pct": _forward_return(conn, ticker, start_row, 730),
+        "periodic_returns": _periodic_returns_since(conn, ticker, start_row["date"]),
+        "price_series": _price_series_since(conn, ticker, start_row["date"]),
+    })
+
+    benchmark = record.get("benchmark_ticker")
+    if benchmark:
+        bench_start = _price_on_or_after(conn, benchmark, record["added_date"])
+        bench_latest = _latest_price(conn, benchmark)
+        if bench_start and bench_latest:
+            bench_return = _return_between(float(bench_start["close"]), float(bench_latest["close"]))
+            item.update({
+                "benchmark_ticker": benchmark,
+                "benchmark_return_pct": bench_return,
+                "excess_return_pct": round(total_return - bench_return, 2) if total_return is not None and bench_return is not None else None,
+                "benchmark_series": _price_series_since(conn, benchmark, bench_start["date"]),
+            })
+        else:
+            item["benchmark_note"] = f"{benchmark} not available in daily_prices."
+
+    return item
 
 
 def load_tickers(file_path: str) -> list[str]:
@@ -297,6 +752,19 @@ def get_history():
         if time.time() - cached_time < CACHE_TTL:
             return jsonify(cached_data)
 
+    db_data = get_history_from_db(ticker, period, interval)
+    if db_data:
+        payload = {
+            "ticker": ticker,
+            "period": period,
+            "interval": interval,
+            "data": db_data,
+            "source": "db",
+            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        _cache[cache_key] = (time.time(), payload)
+        return jsonify(payload)
+
     def _fetch_history() -> pd.DataFrame:
         t = yf.Ticker(ticker)
         data = t.history(period=period, interval=interval)
@@ -336,11 +804,170 @@ def get_history():
         "period": period,
         "interval": interval,
         "data": data,
+        "source": "yfinance",
         "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
     _cache[cache_key] = (time.time(), payload)
     return jsonify(payload)
+
+
+@app.route("/api/index-additions/performance")
+def get_index_addition_performance():
+    """Return performance since stocks were added to an index.
+
+    Modes:
+      - Saved records: /api/index-additions/performance?index_key=sp500
+      - Ad hoc: /api/index-additions/performance?ticker=NVDA&index_key=sp500&added_date=2020-01-01
+    """
+    if not os.path.exists(DB_PATH):
+        return jsonify({"error": "database not found; run db/init_db.py first"}), 500
+
+    ticker = request.args.get("ticker", "").strip().upper()
+    added_date = request.args.get("added_date", "").strip()
+    index_key = request.args.get("index_key", request.args.get("index", "all")).strip().lower() or "all"
+    try:
+        limit = min(max(int(request.args.get("limit", "100")), 1), 500)
+    except ValueError:
+        limit = 100
+    include_upcoming = request.args.get("include_upcoming", "").strip().lower() in {"1", "true", "yes"}
+
+    candidates = _index_candidates_for_ticker(ticker) if ticker else []
+
+    with get_db_conn() as conn:
+        if ticker and added_date:
+            record = _index_addition_record_from_request(request.args)
+            if isinstance(record, tuple):
+                body, status = record
+                return jsonify(body), status
+            records = [record]
+        else:
+            records = _saved_index_addition_records(
+                conn,
+                index_key,
+                limit,
+                ticker=ticker or None,
+                include_upcoming=include_upcoming,
+            )
+
+        items = [_build_index_addition_performance(conn, rec) for rec in records]
+
+    payload = {
+        "count": len(items),
+        "index_key": index_key,
+        "ticker": ticker or None,
+        "candidate_indices": candidates,
+        "items": items,
+        "source": "daily_prices",
+        "lookup_mode": "ad_hoc" if ticker and added_date else "saved_records",
+        "message": (
+            "No saved index-addition records found for this ticker yet."
+            if ticker and not added_date and not items
+            else None
+        ),
+        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    return jsonify(payload)
+
+
+@app.route("/api/index-definitions")
+def get_index_definitions():
+    return jsonify({
+        "indices": _index_definitions(),
+        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    })
+
+
+@app.route("/api/index-additions/candidates")
+def get_index_addition_candidates():
+    ticker = request.args.get("ticker", "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "ticker is required"}), 400
+    return jsonify({
+        "ticker": ticker,
+        "indices": _index_candidates_for_ticker(ticker),
+        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    })
+
+
+@app.route("/api/index-changes")
+def get_index_changes():
+    if not os.path.exists(DB_PATH):
+        return jsonify({"error": "database not found; run db/init_db.py first"}), 500
+
+    index_key = request.args.get("index_key", "sp500").strip().lower() or "sp500"
+    index_def = _index_definition(index_key)
+    if not index_def:
+        return jsonify({"error": f"unknown index_key: {index_key}"}), 400
+    include_upcoming = request.args.get("include_upcoming", "").strip().lower() in {"1", "true", "yes"}
+    requested_years = [
+        y.strip()
+        for y in request.args.get("years", "").split(",")
+        if y.strip().isdigit()
+    ]
+
+    with get_db_conn() as conn:
+        year_rows = conn.execute(
+            """
+            SELECT DISTINCT substr(effective_date, 1, 4) AS year
+            FROM index_constituent_changes
+            WHERE index_key = ?
+              AND (? = 1 OR effective_date <= ?)
+            ORDER BY year DESC
+            """,
+            (index_key, 1 if include_upcoming else 0, date.today().isoformat()),
+        ).fetchall()
+        available_years = [row["year"] for row in year_rows if row["year"]]
+        selected_years = requested_years or (available_years[:1] if available_years else [])
+
+        where = "index_key = ?"
+        params: list = [index_key]
+        if not include_upcoming:
+            where += " AND effective_date <= ?"
+            params.append(date.today().isoformat())
+        if selected_years:
+            placeholders = ",".join("?" for _ in selected_years)
+            where += f" AND substr(effective_date, 1, 4) IN ({placeholders})"
+            params.extend(selected_years)
+
+        rows = conn.execute(
+            f"""
+            SELECT ticker, action, effective_date, quarter, source_note, source_url
+            FROM index_constituent_changes
+            WHERE {where}
+            ORDER BY effective_date DESC, action ASC, ticker ASC
+            """,
+            params,
+        ).fetchall()
+
+    groups_by_quarter: dict[str, dict] = {}
+    for row in rows:
+        group = groups_by_quarter.setdefault(
+            row["quarter"],
+            {"quarter": row["quarter"], "additions": [], "removals": []},
+        )
+        item = {
+            "ticker": row["ticker"],
+            "effective_date": row["effective_date"],
+            "source_note": row["source_note"],
+            "source_url": row["source_url"],
+        }
+        if row["action"] == "add":
+            group["additions"].append(item)
+        else:
+            group["removals"].append(item)
+
+    return jsonify({
+        "index_key": index_key,
+        "index_name": index_def["name"],
+        "benchmark_ticker": index_def.get("benchmark_ticker"),
+        "available_years": available_years,
+        "selected_years": selected_years,
+        "groups": [groups_by_quarter[key] for key in sorted(groups_by_quarter.keys(), reverse=True)],
+        "count": len(rows),
+        "source": "index_constituent_changes",
+        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    })
 
 
 # ─── Watchlist — JSON-backed with sectors ─────────────────────────────────
@@ -384,9 +1011,156 @@ def _flatten_wl(data: dict) -> list[str]:
     return out
 
 
+def _flatten_wl_with_sectors(data: dict) -> list[dict]:
+    seen, out = set(), []
+    for sector in data.get("sectors", []):
+        for ticker in sector.get("tickers", []):
+            ticker = str(ticker).strip().upper()
+            if not ticker or ticker in seen:
+                continue
+            seen.add(ticker)
+            out.append({
+                "ticker": ticker,
+                "sector_key": sector.get("key"),
+                "sector_name": sector.get("name"),
+            })
+    return out
+
+
+def _ensure_symbol(conn: sqlite3.Connection, ticker: str) -> int:
+    conn.execute(
+        """
+        INSERT INTO symbols (ticker, asset_type, active, updated_at)
+        VALUES (?, 'equity', 1, CURRENT_TIMESTAMP)
+        ON CONFLICT(ticker) DO UPDATE SET
+            active = 1,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (ticker,),
+    )
+    return int(conn.execute("SELECT id FROM symbols WHERE ticker = ?", (ticker,)).fetchone()["id"])
+
+
+def _ensure_watchlist(conn: sqlite3.Connection, key: str = "default", name: str = "My Watchlist") -> int:
+    conn.execute(
+        """
+        INSERT INTO watchlists (key, name)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET name = excluded.name
+        """,
+        (key, name),
+    )
+    return int(conn.execute("SELECT id FROM watchlists WHERE key = ?", (key,)).fetchone()["id"])
+
+
+def _record_watchlist_event(
+    conn: sqlite3.Connection,
+    watchlist_id: int,
+    symbol_id: int,
+    ticker: str,
+    action: str,
+    sector_key: str | None,
+    sector_name: str | None,
+    source: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO watchlist_symbol_events
+            (watchlist_id, symbol_id, ticker, action, sector_key, sector_name, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (watchlist_id, symbol_id, ticker, action, sector_key, sector_name, source),
+    )
+
+
+def _sync_watchlist_db_from_json(data: dict, source: str = "watchlist_json") -> None:
+    if not os.path.exists(DB_PATH):
+        return
+
+    desired = _flatten_wl_with_sectors(data)
+    desired_by_ticker = {row["ticker"]: row for row in desired}
+
+    with get_db_conn() as conn:
+        watchlist_id = _ensure_watchlist(conn)
+        existing = conn.execute(
+            """
+            SELECT s.ticker, s.id AS symbol_id, ws.active
+            FROM watchlist_symbols ws
+            JOIN symbols s ON s.id = ws.symbol_id
+            WHERE ws.watchlist_id = ?
+            """,
+            (watchlist_id,),
+        ).fetchall()
+        existing_by_ticker = {row["ticker"]: row for row in existing}
+
+        for ticker, row in desired_by_ticker.items():
+            symbol_id = _ensure_symbol(conn, ticker)
+            prior = existing_by_ticker.get(ticker)
+            action = "add" if not prior or not prior["active"] else None
+            conn.execute(
+                """
+                INSERT INTO watchlist_symbols (
+                    watchlist_id,
+                    symbol_id,
+                    sector_key,
+                    sector_name,
+                    active,
+                    removed_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, 1, NULL, CURRENT_TIMESTAMP)
+                ON CONFLICT(watchlist_id, symbol_id) DO UPDATE SET
+                    sector_key = excluded.sector_key,
+                    sector_name = excluded.sector_name,
+                    active = 1,
+                    removed_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (watchlist_id, symbol_id, row["sector_key"], row["sector_name"]),
+            )
+            if action:
+                _record_watchlist_event(
+                    conn,
+                    watchlist_id,
+                    symbol_id,
+                    ticker,
+                    action,
+                    row["sector_key"],
+                    row["sector_name"],
+                    source,
+                )
+
+        for ticker, row in existing_by_ticker.items():
+            if ticker in desired_by_ticker or not row["active"]:
+                continue
+            conn.execute(
+                """
+                UPDATE watchlist_symbols
+                SET active = 0,
+                    removed_at = COALESCE(removed_at, CURRENT_TIMESTAMP),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE watchlist_id = ? AND symbol_id = ?
+                """,
+                (watchlist_id, row["symbol_id"]),
+            )
+            _record_watchlist_event(
+                conn,
+                watchlist_id,
+                row["symbol_id"],
+                ticker,
+                "remove",
+                None,
+                None,
+                source,
+            )
+        conn.commit()
+
+
 def _read_watchlist() -> list[str]:
     """Flat ordered list of all watchlist tickers (from JSON source of truth)."""
-    return _flatten_wl(_read_wl_json())
+    data = _read_wl_json()
+    _sync_watchlist_db_from_json(data, source="api_read")
+    return _flatten_wl(data)
 
 
 def _write_watchlist(tickers: list[str]):
@@ -417,7 +1191,9 @@ def get_watchlist():
 @app.route("/api/watchlist/sectors", methods=["GET"])
 def get_watchlist_sectors():
     """Return full sector-categorized watchlist."""
-    return jsonify(_read_wl_json())
+    data = _read_wl_json()
+    _sync_watchlist_db_from_json(data, source="api_read")
+    return jsonify(data)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -541,6 +1317,7 @@ def add_to_watchlist():
             data["sectors"].append(other)
         other["tickers"].append(ticker)
         _write_wl_json(data)
+        _sync_watchlist_db_from_json(data, source="dashboard_add")
         existing = _flatten_wl(data)
     return jsonify({"tickers": existing})
 
@@ -552,6 +1329,7 @@ def remove_from_watchlist(ticker: str):
     for sector in data["sectors"]:
         sector["tickers"] = [t for t in sector["tickers"] if t != ticker]
     _write_wl_json(data)
+    _sync_watchlist_db_from_json(data, source="dashboard_remove")
     return jsonify({"tickers": _flatten_wl(data)})
 
 
@@ -5308,4 +6086,4 @@ if __name__ == "__main__":
     # Start PTR live poller daemon (polls House Clerk search page every 5 min)
     _ptr_thread = threading.Thread(target=_ptr_live_poller_thread, daemon=True, name="PTRLivePoller")
     _ptr_thread.start()
-    app.run(debug=True, port=5050, use_reloader=False)
+    app.run(debug=True, port=5051, use_reloader=False)

@@ -95,6 +95,28 @@ function applyTheme(theme) {
         priceChart.options.plugins.tooltip.bodyColor = tc.tooltipText;
         priceChart.update();
     }
+    if (indexAddsChart) {
+        const tc = themeColors();
+        indexAddsChart.options.scales.x.grid.color = tc.grid;
+        indexAddsChart.options.scales.x.ticks.color = tc.tick;
+        indexAddsChart.options.scales.y.grid.color = tc.grid;
+        indexAddsChart.options.scales.y.ticks.color = tc.tick;
+        indexAddsChart.options.plugins.tooltip.backgroundColor = tc.tooltipBg;
+        indexAddsChart.options.plugins.tooltip.titleColor = tc.tooltipText;
+        indexAddsChart.options.plugins.tooltip.bodyColor = tc.tooltipText;
+        indexAddsChart.update();
+    }
+    if (indexAddsPriceChart) {
+        const tc = themeColors();
+        indexAddsPriceChart.options.scales.x.grid.color = tc.grid;
+        indexAddsPriceChart.options.scales.x.ticks.color = tc.tick;
+        indexAddsPriceChart.options.scales.y.grid.color = tc.grid;
+        indexAddsPriceChart.options.scales.y.ticks.color = tc.tick;
+        indexAddsPriceChart.options.plugins.tooltip.backgroundColor = tc.tooltipBg;
+        indexAddsPriceChart.options.plugins.tooltip.titleColor = tc.tooltipText;
+        indexAddsPriceChart.options.plugins.tooltip.bodyColor = tc.tooltipText;
+        indexAddsPriceChart.update();
+    }
 }
 
 function setupThemeToggle() {
@@ -116,6 +138,12 @@ let currentTicker = "";
 const smaSelections = { 50: false, 100: false, 200: false };
 let optionsTerm = "long";
 let optionsSortBy = "volume";
+let indexAddsLoaded = false;
+let indexAddsChart = null;
+let indexAddsPriceChart = null;
+let indexAddsPanelInitialized = false;
+let indexAddsRequestSeq = 0;
+let indexChangesYears = new Set();
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
     month: "short",
@@ -127,6 +155,18 @@ function formatDateLabel(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return dateFormatter.format(date);
+}
+
+function formatSignedPct(value) {
+    if (value == null || Number.isNaN(Number(value))) return "—";
+    const num = Number(value);
+    const cls = num >= 0 ? "change-positive" : "change-negative";
+    return `<span class="${cls}">${num >= 0 ? "+" : ""}${num.toFixed(2)}%</span>`;
+}
+
+function formatCurrency(value) {
+    if (value == null || Number.isNaN(Number(value))) return "—";
+    return `$${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function createChart(ctx) {
@@ -1685,6 +1725,21 @@ async function init() {
         };
         tabsContainer.appendChild(sectorsTab);
 
+        // Add Index Addition Performance tab button
+        const indexAddsTab = document.createElement("button");
+        indexAddsTab.className = "index-tab";
+        indexAddsTab.id = "tab-index-adds";
+        indexAddsTab.textContent = "📌 Index Adds";
+        indexAddsTab.onclick = () => {
+            document.querySelectorAll(".index-tab").forEach(t => t.classList.remove("active"));
+            indexAddsTab.classList.add("active");
+            document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+            const panel = document.getElementById("panel-index-adds");
+            if (panel) panel.classList.add("active");
+            setupIndexAddsPanel();
+        };
+        tabsContainer.appendChild(indexAddsTab);
+
         // Add Market Events tab button
         const eventsTab = document.createElement("button");
         eventsTab.className = "index-tab";
@@ -2974,6 +3029,569 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ════════════════════════════════════════════════════
+// INDEX ADDITION PERFORMANCE PANEL
+// ════════════════════════════════════════════════════
+
+let indexAddsBenchmarkAutoValue = "";
+let indexDefinitionCache = [];
+let indexAddsIndexUserSelected = false;
+let indexAddsCandidateTicker = "";
+
+function _indexAddSelectedOption() {
+    const select = document.getElementById("index-adds-index");
+    return select?.options?.[select.selectedIndex] || null;
+}
+
+function _syncIndexAddsBenchmark(force = false) {
+    const benchmarkInput = document.getElementById("index-adds-benchmark");
+    const selected = _indexAddSelectedOption();
+    const benchmark = selected?.dataset?.benchmark || "";
+    if (!benchmarkInput || !benchmark) return;
+
+    if (force || !benchmarkInput.value || benchmarkInput.value === indexAddsBenchmarkAutoValue) {
+        benchmarkInput.value = benchmark;
+        indexAddsBenchmarkAutoValue = benchmark;
+    }
+}
+
+function _setIndexAddCandidateOptions(indices, emptyText = "No matching current index") {
+    const select = document.getElementById("index-adds-index");
+    if (!select) return;
+    const priorValue = select.value;
+    const quarterlyIndex = document.getElementById("index-changes-index")?.value || "";
+
+    if (!indices.length) {
+        select.innerHTML = `<option value="custom">${emptyText}</option>`;
+        _syncIndexAddsBenchmark(true);
+        return;
+    }
+
+    const options = indices.map(index => {
+        const benchmark = index.benchmark_ticker || "";
+        const icon = index.icon ? `${index.icon} ` : "";
+        const hasRecord = index.has_addition_record ? "1" : "0";
+        return `<option value="${index.key}" data-benchmark="${benchmark}" data-has-record="${hasRecord}">${icon}${index.name}</option>`;
+    });
+    if (indices.length > 1) {
+        options.unshift(`<option value="all" data-benchmark="">All matching indices</option>`);
+    }
+    select.innerHTML = options.join("");
+    const candidateKeys = new Set(indices.map(index => index.key));
+    const recordKeys = new Set(indices.filter(index => index.has_addition_record).map(index => index.key));
+    if (indexAddsIndexUserSelected && priorValue && candidateKeys.has(priorValue)) {
+        select.value = priorValue;
+    } else if (quarterlyIndex && recordKeys.has(quarterlyIndex)) {
+        select.value = quarterlyIndex;
+    } else if (recordKeys.size) {
+        select.value = Array.from(recordKeys)[0];
+    } else if (quarterlyIndex && candidateKeys.has(quarterlyIndex)) {
+        select.value = quarterlyIndex;
+    } else if (indices.length > 1) {
+        select.value = "all";
+    }
+    _syncIndexAddsBenchmark(true);
+}
+
+async function loadIndexAddCandidates(ticker) {
+    const cleanTicker = (ticker || "").trim().toUpperCase();
+    if (!cleanTicker) {
+        indexAddsIndexUserSelected = false;
+        indexAddsCandidateTicker = "";
+        _setIndexAddCandidateOptions([], "Enter ticker to filter indices");
+        return [];
+    }
+    if (cleanTicker !== indexAddsCandidateTicker) {
+        indexAddsIndexUserSelected = false;
+    }
+
+    const res = await fetch(`/api/index-additions/candidates?ticker=${encodeURIComponent(cleanTicker)}`);
+    const payload = await res.json();
+    if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
+    const indices = payload.indices || [];
+    indexAddsCandidateTicker = cleanTicker;
+    _setIndexAddCandidateOptions(indices);
+    return indices;
+}
+
+async function loadIndexDefinitions() {
+    const select = document.getElementById("index-changes-index");
+    if (!select) return [];
+
+    const res = await fetch("/api/index-definitions");
+    const payload = await res.json();
+    if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
+
+    indexDefinitionCache = payload.indices || [];
+    if (!indexDefinitionCache.length) return [];
+
+    const previous = select.value || "sp500";
+    select.innerHTML = indexDefinitionCache.map(index => {
+        const icon = index.icon ? `${index.icon} ` : "";
+        return `<option value="${index.key}">${icon}${index.name}</option>`;
+    }).join("");
+
+    if (indexDefinitionCache.some(index => index.key === previous)) {
+        select.value = previous;
+    }
+    return indexDefinitionCache;
+}
+
+function _indexAddQueryFromControls(mode) {
+    const indexKey = document.getElementById("index-adds-index")?.value || "all";
+    const params = new URLSearchParams({ index_key: indexKey });
+    const ticker = document.getElementById("index-adds-ticker")?.value.trim().toUpperCase();
+
+    if (mode === "ticker") {
+        if (ticker) params.set("ticker", ticker);
+    } else if (mode === "manual") {
+        const addedDate = document.getElementById("index-adds-date")?.value;
+        const benchmark = document.getElementById("index-adds-benchmark")?.value.trim().toUpperCase();
+        if (ticker) params.set("ticker", ticker);
+        if (addedDate) params.set("added_date", addedDate);
+        if (benchmark) params.set("benchmark_ticker", benchmark);
+    }
+
+    return params;
+}
+
+function _indexAddRow(item) {
+    if (item.error) {
+        return `<tr>
+            <td class="ticker-name">${item.ticker || "—"}</td>
+            <td>${item.index_name || item.index_key || "—"}</td>
+            <td>${item.added_date || "—"}</td>
+            <td colspan="9" class="no-data">${item.error}</td>
+        </tr>`;
+    }
+
+    const benchmark = item.benchmark_return_pct != null
+        ? `${item.benchmark_ticker}: ${formatSignedPct(item.benchmark_return_pct)}`
+        : (item.benchmark_ticker ? `${item.benchmark_ticker}: —` : "—");
+
+    return `<tr>
+        <td class="ticker-name">${item.ticker}</td>
+        <td>${item.index_name || item.index_key}</td>
+        <td>${item.added_date}</td>
+        <td>${item.start_date}<br><small>${formatCurrency(item.start_price)}</small></td>
+        <td>${item.latest_date}<br><small>${formatCurrency(item.latest_price)}</small></td>
+        <td>${formatSignedPct(item.total_return_pct)}</td>
+        <td>${formatSignedPct(item.annualized_return_pct)}</td>
+        <td>${formatSignedPct(item.return_6m_pct)}</td>
+        <td>${formatSignedPct(item.return_1y_pct)}</td>
+        <td>${formatSignedPct(item.return_2y_pct)}</td>
+        <td>${benchmark}</td>
+        <td>${formatSignedPct(item.excess_return_pct)}</td>
+    </tr>`;
+}
+
+function _renderIndexAddsChart(items) {
+    const chartBox = document.getElementById("index-adds-chart-box");
+    const title = document.getElementById("index-adds-chart-title");
+    const canvas = document.getElementById("index-adds-chart");
+    if (!chartBox || !canvas) return;
+
+    const item = (items || []).find(row => row.price_series?.length);
+    if (!item) {
+        chartBox.classList.add("hidden");
+        if (indexAddsChart) {
+            indexAddsChart.destroy();
+            indexAddsChart = null;
+        }
+        return;
+    }
+
+    const labels = item.price_series.map(point => point.date);
+    const tc = themeColors();
+    const datasets = [
+        {
+            label: `${item.ticker} return`,
+            data: item.price_series.map(point => point.return_pct),
+            borderColor: "#8b5cf6",
+            backgroundColor: "rgba(139,92,246,0.12)",
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.25,
+            fill: true,
+        },
+    ];
+
+    if (item.benchmark_series?.length) {
+        const benchmarkByDate = new Map(item.benchmark_series.map(point => [point.date, point.return_pct]));
+        datasets.push({
+            label: `${item.benchmark_ticker} return`,
+            data: labels.map(date => benchmarkByDate.get(date) ?? null),
+            borderColor: "#22c55e",
+            backgroundColor: "rgba(34,197,94,0.05)",
+            borderWidth: 2,
+            borderDash: [5, 4],
+            pointRadius: 0,
+            tension: 0.25,
+            spanGaps: true,
+            fill: false,
+        });
+    }
+
+    if (title) {
+        const benchLabel = item.benchmark_series?.length ? ` vs ${item.benchmark_ticker}` : "";
+        title.textContent = `${item.ticker}${benchLabel} since ${item.added_date}`;
+    }
+
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+            x: {
+                grid: { color: tc.grid, drawBorder: false },
+                ticks: {
+                    color: tc.tick,
+                    maxRotation: 0,
+                    autoSkip: true,
+                    maxTicksLimit: 8,
+                    callback: function (value) {
+                        return formatDateLabel(this.getLabelForValue(value));
+                    },
+                },
+            },
+            y: {
+                grid: { color: tc.grid, drawBorder: false },
+                ticks: {
+                    color: tc.tick,
+                    callback: value => `${Number(value).toFixed(0)}%`,
+                },
+            },
+        },
+        plugins: {
+            legend: {
+                display: true,
+                labels: { color: tc.tick, usePointStyle: true, boxWidth: 8 },
+            },
+            tooltip: {
+                backgroundColor: tc.tooltipBg,
+                titleColor: tc.tooltipText,
+                bodyColor: tc.tooltipText,
+                callbacks: {
+                    title: items => formatDateLabel(items?.[0]?.label ?? ""),
+                    label: ctx => `${ctx.dataset.label}: ${Number(ctx.parsed.y).toFixed(2)}%`,
+                },
+            },
+        },
+    };
+
+    if (indexAddsChart) {
+        indexAddsChart.data.labels = labels;
+        indexAddsChart.data.datasets = datasets;
+        indexAddsChart.options = options;
+        indexAddsChart.update();
+    } else {
+        indexAddsChart = new Chart(canvas.getContext("2d"), {
+            type: "line",
+            data: { labels, datasets },
+            options,
+        });
+    }
+    chartBox.classList.remove("hidden");
+}
+
+function _renderIndexAddsPriceChart(items) {
+    const chartBox = document.getElementById("index-adds-price-chart-box");
+    const title = document.getElementById("index-adds-price-chart-title");
+    const canvas = document.getElementById("index-adds-price-chart");
+    if (!chartBox || !canvas) return;
+
+    const item = (items || []).find(row => row.price_series?.length);
+    if (!item) {
+        chartBox.classList.add("hidden");
+        if (indexAddsPriceChart) {
+            indexAddsPriceChart.destroy();
+            indexAddsPriceChart = null;
+        }
+        return;
+    }
+
+    const labels = item.price_series.map(point => point.date);
+    const tc = themeColors();
+    const dataset = {
+        label: `${item.ticker} close`,
+        data: item.price_series.map(point => point.close),
+        borderColor: "#38bdf8",
+        backgroundColor: "rgba(56,189,248,0.1)",
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.25,
+        fill: true,
+    };
+
+    if (title) title.textContent = `${item.ticker} price since ${item.added_date}`;
+
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        scales: {
+            x: {
+                grid: { color: tc.grid, drawBorder: false },
+                ticks: {
+                    color: tc.tick,
+                    maxRotation: 0,
+                    autoSkip: true,
+                    maxTicksLimit: 8,
+                    callback: function (value) {
+                        return formatDateLabel(this.getLabelForValue(value));
+                    },
+                },
+            },
+            y: {
+                grid: { color: tc.grid, drawBorder: false },
+                ticks: { color: tc.tick, callback: value => `$${Number(value).toFixed(0)}` },
+            },
+        },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                backgroundColor: tc.tooltipBg,
+                titleColor: tc.tooltipText,
+                bodyColor: tc.tooltipText,
+                callbacks: {
+                    title: items => formatDateLabel(items?.[0]?.label ?? ""),
+                    label: ctx => `${item.ticker}: ${formatCurrency(ctx.parsed.y)}`,
+                },
+            },
+        },
+    };
+
+    if (indexAddsPriceChart) {
+        indexAddsPriceChart.data.labels = labels;
+        indexAddsPriceChart.data.datasets = [dataset];
+        indexAddsPriceChart.options = options;
+        indexAddsPriceChart.update();
+    } else {
+        indexAddsPriceChart = new Chart(canvas.getContext("2d"), {
+            type: "line",
+            data: { labels, datasets: [dataset] },
+            options,
+        });
+    }
+    chartBox.classList.remove("hidden");
+}
+
+function _indexChangeChips(items, action) {
+    if (!items?.length) return `<span class="no-data">None</span>`;
+    return items.map(item => `<span class="index-change-chip ${action}">
+        ${item.ticker}<span class="index-change-date">${item.effective_date}</span>
+    </span>`).join("");
+}
+
+function _renderIndexChanges(payload) {
+    const body = document.getElementById("index-changes-body");
+    const meta = document.getElementById("index-changes-meta");
+    if (!body) return;
+    if (meta) {
+        const yearText = payload.selected_years?.length ? payload.selected_years.join(", ") : "No years";
+        meta.textContent = `${payload.count || 0} changes · ${payload.index_name} · ${yearText}`;
+    }
+
+    const groups = payload.groups || [];
+    body.innerHTML = groups.length
+        ? groups.map(group => `<div class="index-quarter-card">
+            <div class="index-quarter-title">${group.quarter}</div>
+            <div class="index-change-columns">
+                <div>
+                    <div class="index-change-label">Added</div>
+                    <div>${_indexChangeChips(group.additions, "add")}</div>
+                </div>
+                <div>
+                    <div class="index-change-label">Removed</div>
+                    <div>${_indexChangeChips(group.removals, "remove")}</div>
+                </div>
+            </div>
+        </div>`).join("")
+        : `<div class="no-data">No index changes found for this selection.</div>`;
+}
+
+function _updateIndexYearButton() {
+    const btn = document.getElementById("index-changes-year-btn");
+    if (!btn) return;
+    const years = Array.from(indexChangesYears).sort().reverse();
+    btn.textContent = years.length ? `Years: ${years.join(", ")}` : "Years";
+}
+
+function _renderIndexYearMenu(availableYears) {
+    const menu = document.getElementById("index-changes-year-menu");
+    if (!menu) return;
+    menu.innerHTML = (availableYears || []).map(year => `<label class="index-year-option">
+        <input type="checkbox" value="${year}" ${indexChangesYears.has(String(year)) ? "checked" : ""} />
+        <span>${year}</span>
+    </label>`).join("");
+    menu.querySelectorAll("input[type='checkbox']").forEach(input => {
+        input.addEventListener("change", () => {
+            if (input.checked) indexChangesYears.add(input.value);
+            else indexChangesYears.delete(input.value);
+            _updateIndexYearButton();
+            fetchAndRenderIndexChanges();
+        });
+    });
+    _updateIndexYearButton();
+}
+
+async function fetchAndRenderIndexChanges(preserveYears = true) {
+    const indexKey = document.getElementById("index-changes-index")?.value || "sp500";
+    const params = new URLSearchParams({ index_key: indexKey });
+    if (preserveYears && indexChangesYears.size) {
+        params.set("years", Array.from(indexChangesYears).join(","));
+    }
+
+    const res = await fetch(`/api/index-changes?${params.toString()}`);
+    const payload = await res.json();
+    if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
+
+    if (!preserveYears || !indexChangesYears.size) {
+        indexChangesYears = new Set((payload.selected_years || []).map(String));
+    }
+    _renderIndexYearMenu(payload.available_years || []);
+    _renderIndexChanges(payload);
+}
+
+function _renderIndexAdds(payload) {
+    const content = document.getElementById("index-adds-content");
+    const body = document.getElementById("index-adds-body");
+    const meta = document.getElementById("index-adds-meta");
+    const note = document.getElementById("index-adds-note");
+    const countEl = document.getElementById("index-adds-count");
+    const bestEl = document.getElementById("index-adds-best");
+    const avgEl = document.getElementById("index-adds-avg");
+    if (!content || !body) return;
+
+    const items = payload.items || [];
+    const valid = items.filter(item => item.total_return_pct != null);
+    const best = valid.length ? Math.max(...valid.map(item => item.total_return_pct)) : null;
+    const avg = valid.length ? valid.reduce((sum, item) => sum + item.total_return_pct, 0) / valid.length : null;
+
+    if (countEl) countEl.textContent = String(items.length);
+    if (bestEl) bestEl.innerHTML = formatSignedPct(best);
+    if (avgEl) avgEl.innerHTML = formatSignedPct(avg);
+    if (meta) meta.textContent = `${items.length} record${items.length === 1 ? "" : "s"} · ${payload.last_updated || ""}`;
+    if (note) note.textContent = `Source: ${payload.source || "daily_prices"}`;
+
+    body.innerHTML = items.length
+        ? items.map(_indexAddRow).join("")
+        : `<tr><td colspan="12" class="no-data">${payload.message || "No saved index-addition records yet. Enter a ticker/date for manual analysis."}</td></tr>`;
+
+    _renderIndexAddsChart(items);
+    _renderIndexAddsPriceChart(items);
+    content.classList.remove("hidden");
+}
+
+async function fetchAndRenderIndexAdds(mode = "saved") {
+    const requestSeq = ++indexAddsRequestSeq;
+    const loading = document.getElementById("index-adds-loading");
+    const error = document.getElementById("index-adds-error");
+    const content = document.getElementById("index-adds-content");
+    const ticker = document.getElementById("index-adds-ticker")?.value.trim().toUpperCase();
+
+    if (mode === "ticker" && !ticker) {
+        if (error) {
+            error.textContent = "Ticker is required.";
+            error.classList.remove("hidden");
+        }
+        return;
+    }
+
+    error?.classList.add("hidden");
+    if (mode === "ticker") {
+        try {
+            await loadIndexAddCandidates(ticker);
+        } catch (err) {
+            if (error) {
+                error.textContent = `⚠️ ${err.message}`;
+                error.classList.remove("hidden");
+            }
+            return;
+        }
+    }
+
+    const params = _indexAddQueryFromControls(mode);
+
+    if (mode === "manual" && (!params.get("ticker") || !params.get("added_date"))) {
+        if (error) {
+            error.textContent = "Ticker and added date are required.";
+            error.classList.remove("hidden");
+        }
+        return;
+    }
+
+    content?.classList.add("hidden");
+    loading?.classList.remove("hidden");
+
+    try {
+        const res = await fetch(`/api/index-additions/performance?${params.toString()}`);
+        const payload = await res.json();
+        if (requestSeq !== indexAddsRequestSeq) return;
+        if (!res.ok) throw new Error(payload.error || `HTTP ${res.status}`);
+        _renderIndexAdds(payload);
+        indexAddsLoaded = true;
+    } catch (err) {
+        if (requestSeq !== indexAddsRequestSeq) return;
+        console.error("Index-adds error:", err);
+        if (error) {
+            error.textContent = `⚠️ ${err.message}`;
+            error.classList.remove("hidden");
+        }
+    } finally {
+        if (requestSeq === indexAddsRequestSeq) {
+            loading?.classList.add("hidden");
+        }
+    }
+}
+
+function setupIndexAddsPanel() {
+    if (indexAddsPanelInitialized) return;
+    indexAddsPanelInitialized = true;
+    document.getElementById("index-adds-find-btn")?.addEventListener("click", () => fetchAndRenderIndexAdds("ticker"));
+    document.getElementById("index-adds-analyze-btn")?.addEventListener("click", () => fetchAndRenderIndexAdds("manual"));
+    document.getElementById("index-adds-saved-btn")?.addEventListener("click", () => fetchAndRenderIndexAdds("saved"));
+    document.getElementById("index-adds-refresh-btn")?.addEventListener("click", () => {
+        fetchAndRenderIndexChanges(false).catch(err => console.warn("Index changes load failed:", err));
+        const content = document.getElementById("index-adds-content");
+        if (content && !content.classList.contains("hidden")) {
+            fetchAndRenderIndexAdds("saved");
+        }
+    });
+    document.getElementById("index-adds-index")?.addEventListener("change", () => {
+        indexAddsIndexUserSelected = true;
+        _syncIndexAddsBenchmark();
+        const ticker = document.getElementById("index-adds-ticker")?.value.trim();
+        if (ticker) fetchAndRenderIndexAdds("ticker");
+    });
+    document.getElementById("index-adds-ticker")?.addEventListener("change", e => {
+        indexAddsIndexUserSelected = false;
+        loadIndexAddCandidates(e.target.value).catch(err => console.warn("Index candidate lookup failed:", err));
+    });
+    document.getElementById("index-adds-ticker")?.addEventListener("keydown", e => {
+        if (e.key === "Enter") {
+            indexAddsIndexUserSelected = false;
+            fetchAndRenderIndexAdds("ticker");
+        }
+    });
+    document.getElementById("index-changes-index")?.addEventListener("change", () => {
+        indexChangesYears = new Set();
+        indexAddsIndexUserSelected = false;
+        fetchAndRenderIndexChanges(false).catch(err => console.warn("Index changes load failed:", err));
+    });
+    document.getElementById("index-changes-year-btn")?.addEventListener("click", () => {
+        document.getElementById("index-changes-year-menu")?.classList.toggle("hidden");
+    });
+    document.addEventListener("click", e => {
+        const menu = document.getElementById("index-changes-year-menu");
+        const wrap = document.querySelector(".index-year-multi");
+        if (menu && wrap && !wrap.contains(e.target)) menu.classList.add("hidden");
+    });
+    loadIndexDefinitions()
+        .then(() => fetchAndRenderIndexChanges(false))
+        .catch(err => console.warn("Index changes load failed:", err));
+}
+
+// ════════════════════════════════════════════════════
 // SECTORS PANEL
 // ════════════════════════════════════════════════════
 let _sectorsInitialized = false;
@@ -3257,7 +3875,12 @@ function setupCyclePanel() {
             pill.classList.add("active");
             _cycleFilter = pill.dataset.filter;
             _applyCycleFilter(_cycleFilter);
-            if (_cycleData) _renderCycleTable(_cycleData, _cycleFilter);
+            if (_cycleData) {
+                _renderCycleTable(_cycleData, _cycleFilter);
+                // Also re-populate widgets 4 & 5 with filter applied
+                _populateCycleYearSelect(_cycleData, _cycleFilter);
+                _populateCycleNormalizedYearSelect(_cycleData, _cycleFilter);
+            }
         });
     });
 
@@ -3271,12 +3894,12 @@ function setupCyclePanel() {
     });
     document.getElementById("cycle-normalized-latest-btn")?.addEventListener("click", () => {
         if (!_cycleData) return;
-        _selectCycleNormalizedYears(_getDefaultCycleNormalizedYears(_cycleData));
+        _selectCycleNormalizedYears(_getDefaultCycleNormalizedYears(_cycleData, _cycleFilter));
         _renderCycleNormalizedChart(_cycleData);
     });
     document.getElementById("cycle-normalized-all-btn")?.addEventListener("click", () => {
         if (!_cycleData) return;
-        _selectCycleNormalizedYears(Object.keys(_cycleData.years).sort());
+        _selectCycleNormalizedYears(_getFilteredCycleYears(_cycleData, _cycleFilter));
         _renderCycleNormalizedChart(_cycleData);
     });
 }
@@ -3407,6 +4030,13 @@ function _filterMatchesType(filter, type) {
     if (filter === "all")              return true;
     if (filter === "election-midterm") return type === "election" || type === "midterm";
     return filter === type;
+}
+
+// ── Helper: return sorted years from data that match the active filter ────
+function _getFilteredCycleYears(data, filter) {
+    return Object.keys(data.years)
+        .sort()
+        .filter(yr => _filterMatchesType(filter, data.years[yr].year_type));
 }
 
 // ── Toggle visibility based on filter pill (no rebuild) ───────────────────
@@ -3592,18 +4222,26 @@ function _renderCycleTable(data, filter) {
 }
 
 // ── Populate year dropdown & render the default year ─────────────────────
-function _populateCycleYearSelect(data) {
+function _populateCycleYearSelect(data, filter) {
     const sel = document.getElementById("cycle-year-select");
     if (!sel) return;
 
-    const allYears = Object.keys(data.years).sort().reverse(); // newest first
-    sel.innerHTML = allYears.map(yr => {
+    filter = filter || _cycleFilter;
+    const filteredYears = _getFilteredCycleYears(data, filter).reverse(); // newest first
+
+    sel.innerHTML = filteredYears.map(yr => {
         const type = data.years[yr].year_type;
         return `<option value="${yr}">${_CYCLE_ICON[type]} ${yr}  —  ${_CYCLE_LABEL[type]}</option>`;
     }).join("");
 
-    // Default to the most recent complete year (skip current partial year if mid-year)
-    const defaultYear = allYears[0];
+    if (!filteredYears.length) {
+        // No years match — show placeholder and clear chart
+        sel.innerHTML = `<option value="">— no years match filter —</option>`;
+        if (_cycleYearChart) { _cycleYearChart.data.datasets = []; _cycleYearChart.update(); }
+        return;
+    }
+
+    const defaultYear = filteredYears[0];
     sel.value = defaultYear;
     _renderCycleYearChart(data, defaultYear);
 }
@@ -3614,10 +4252,18 @@ function _getCompleteCycleYears(data) {
     );
 }
 
-function _getDefaultCycleNormalizedYears(data) {
-    const completeYears = _getCompleteCycleYears(data);
-    const sourceYears = completeYears.length ? completeYears : Object.keys(data.years).sort();
-    return sourceYears.slice(-8);
+function _getDefaultCycleNormalizedYears(data, filter) {
+    filter = filter || _cycleFilter;
+    const filteredYears = _getFilteredCycleYears(data, filter);
+    const complete = filteredYears.filter(yr => data.years[yr].months.filter(Boolean).length === 12);
+    const sourceYears = complete.length ? complete : filteredYears;
+
+    // For a specific single-type filter → show ALL years in that group so the
+    // user sees every midterm / election / pre / post year overlaid at once.
+    const broadFilters = new Set(["all", "election-midterm"]);
+    if (!broadFilters.has(filter)) return sourceYears;   // ← all years for that type
+
+    return sourceYears.slice(-8);  // broad filters keep the latest-8 default
 }
 
 function _selectCycleNormalizedYears(years) {
@@ -3642,17 +4288,25 @@ function _getSelectedCycleNormalizedYears(data) {
     return fallback;
 }
 
-function _populateCycleNormalizedYearSelect(data) {
+function _populateCycleNormalizedYearSelect(data, filter) {
     const sel = document.getElementById("cycle-normalized-year-select");
     if (!sel) return;
 
-    const allYears = Object.keys(data.years).sort().reverse();
-    sel.innerHTML = allYears.map(yr => {
+    filter = filter || _cycleFilter;
+    const filteredYears = _getFilteredCycleYears(data, filter).reverse(); // newest first
+
+    sel.innerHTML = filteredYears.map(yr => {
         const type = data.years[yr].year_type;
         return `<option value="${yr}">${_CYCLE_ICON[type]} ${yr} — ${_CYCLE_LABEL[type]}</option>`;
     }).join("");
 
-    _selectCycleNormalizedYears(_getDefaultCycleNormalizedYears(data));
+    if (!filteredYears.length) {
+        sel.innerHTML = `<option value="">— no years match filter —</option>`;
+        if (_cycleNormalizedChart) { _cycleNormalizedChart.data.datasets = []; _cycleNormalizedChart.update(); }
+        return;
+    }
+
+    _selectCycleNormalizedYears(_getDefaultCycleNormalizedYears(data, filter));
     _renderCycleNormalizedChart(data);
 }
 

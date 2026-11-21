@@ -5,122 +5,318 @@
       "name": "Semiconductors",
       "icon": "🔬",
       "tickers": [
-        "NVDA", "AMD", "AVGO", "ASML", "INTC", "QCOM", "MU", "TXN", "TSM",
-        "AMAT", "TER", "MCHP", "ON", "TSEM", "AMKR", "ONTO",
-        "WOLF", "NVTS", "AMBA", "ADI", "MRVL", "ALAB"
+        "NVDA",
+        "AVGO",
+        "ASML",
+        "INTC",
+        "QCOM",
+        "MU",
+        "TXN",
+        "TSM",
+        "AMAT",
+        "TER",
+        "MCHP",
+        "ON",
+        "TSEM",
+        "AMKR",
+        "ONTO",
+        "WOLF",
+        "NVTS",
+        "AMBA",
+        "ADI",
+        "MRVL",
+        "ALAB"
       ]
     },
     {
       "key": "photonics",
       "name": "Photonics & Optics",
       "icon": "💡",
-      "tickers": ["COHR", "AAOI", "POET", "OCC"]
+      "tickers": [
+        "COHR",
+        "AAOI",
+        "POET",
+        "OCC"
+      ]
     },
     {
       "key": "electronics_components",
       "name": "Electronics & Components",
       "icon": "🔌",
-      "tickers": ["APH", "TEL", "ITT"]
+      "tickers": [
+        "APH",
+        "TEL",
+        "ITT"
+      ]
     },
     {
       "key": "ai_software",
       "name": "AI & Software",
       "icon": "🤖",
       "tickers": [
-        "PLTR", "NOW", "CRM", "ADBE", "INTU", "MDB", "PATH", "SOUN",
-        "APP", "VEEV", "WIX", "CDNS", "SNPS", "ORCL", "SERV", "U", "SYM",
-        "FIG", "DUOL", "IBM", "TTD", "MANH", "CGNX"
+        "PLTR",
+        "NOW",
+        "CRM",
+        "ADBE",
+        "INTU",
+        "MDB",
+        "PATH",
+        "SOUN",
+        "APP",
+        "VEEV",
+        "WIX",
+        "CDNS",
+        "SNPS",
+        "ORCL",
+        "SERV",
+        "U",
+        "SYM",
+        "FIG",
+        "DUOL",
+        "IBM",
+        "TTD",
+        "MANH",
+        "CGNX"
       ]
     },
     {
       "key": "cybersecurity",
       "name": "Cybersecurity",
       "icon": "🛡️",
-      "tickers": ["CRWD", "PANW", "FTNT", "NET", "RBRK", "ZS", "CLBT", "EVLV", "VRNS"]
+      "tickers": [
+        "CRWD",
+        "PANW",
+        "FTNT",
+        "NET",
+        "RBRK",
+        "ZS",
+        "CLBT",
+        "EVLV",
+        "VRNS"
+      ]
     },
     {
       "key": "cloud_infra",
       "name": "Cloud & AI Infrastructure",
       "icon": "☁️",
-      "tickers": ["MSFT", "GOOGL", "AAPL", "CRWV", "NBIS", "VRT", "CLS", "SMCI", "ANET", "GOOG"]
+      "tickers": [
+        "MSFT",
+        "GOOGL",
+        "AAPL",
+        "CRWV",
+        "NBIS",
+        "VRT",
+        "CLS",
+        "SMCI",
+        "ANET",
+        "GOOG"
+      ]
     },
     {
       "key": "fintech",
       "name": "Fintech & Finance",
       "icon": "💳",
-      "tickers": ["SOFI", "AFRM", "HOOD", "MELI", "AXP", "COIN", "SEZL", "BN", "FOUR", "DLO"]
+      "tickers": [
+        "SOFI",
+        "AFRM",
+        "HOOD",
+        "MELI",
+        "AXP",
+        "COIN",
+        "SEZL",
+        "BN",
+        "FOUR",
+        "DLO"
+      ]
     },
     {
       "key": "ev_mobility",
       "name": "EV & Mobility",
       "icon": "⚡",
-      "tickers": ["TSLA", "NIO", "RIVN"]
+      "tickers": [
+        "TSLA",
+        "NIO",
+        "RIVN"
+      ]
     },
     {
       "key": "defense_drones",
       "name": "Defense, Drones & Aviation",
       "icon": "🪖",
-      "tickers": ["LMT", "KTOS", "RCAT", "AVAV", "BA", "HON", "HWM", "ONDS", "UMAC", "ACHR", "JOBY", "DPRO", "LHX", "ESLT"]
+      "tickers": [
+        "LMT",
+        "KTOS",
+        "RCAT",
+        "AVAV",
+        "BA",
+        "HON",
+        "HWM",
+        "ONDS",
+        "UMAC",
+        "ACHR",
+        "JOBY",
+        "DPRO",
+        "LHX",
+        "ESLT"
+      ]
     },
     {
       "key": "space",
       "name": "Space",
       "icon": "🚀",
-      "tickers": ["RKLB", "LUNR", "RDW", "SATS", "VSAT", "MDA", "ASTS"]
+      "tickers": [
+        "RKLB",
+        "LUNR",
+        "RDW",
+        "SATS",
+        "VSAT",
+        "MDA",
+        "ASTS"
+      ]
     },
     {
       "key": "quantum",
       "name": "Quantum Computing",
       "icon": "⚛️",
-      "tickers": ["INFQ", "QBTS", "QUBT", "RGTI", "IONQ", "ARQQ"]
+      "tickers": [
+        "INFQ",
+        "QBTS",
+        "QUBT",
+        "RGTI",
+        "IONQ",
+        "ARQQ"
+      ]
     },
     {
       "key": "crypto",
       "name": "Crypto & Digital Assets",
       "icon": "₿",
-      "tickers": ["MSTR", "CRCL", "BMNR", "CLSK", "WULF", "IREN", "HUT", "BTBT", "BTDR", "APLD", "MARA", "CAN"]
+      "tickers": [
+        "MSTR",
+        "CRCL",
+        "BMNR",
+        "CLSK",
+        "WULF",
+        "IREN",
+        "HUT",
+        "BTBT",
+        "BTDR",
+        "APLD",
+        "MARA",
+        "CAN"
+      ]
     },
     {
       "key": "clean_energy",
       "name": "Clean Energy",
       "icon": "🔋",
-      "tickers": ["CEG", "ENPH", "AMPX", "BEPC", "FLNC", "CLNE", "FCEL", "SMR", "GEV", "VST", "OKLO", "EOSE"]
+      "tickers": [
+        "CEG",
+        "ENPH",
+        "AMPX",
+        "BEPC",
+        "FLNC",
+        "CLNE",
+        "FCEL",
+        "SMR",
+        "GEV",
+        "VST",
+        "OKLO",
+        "EOSE"
+      ]
     },
     {
       "key": "mining_materials",
       "name": "Mining & Materials",
       "icon": "⛏️",
-      "tickers": ["WPM", "MT", "SSRM", "MP", "UROY", "UEC", "TMC", "ERO", "WRN", "RIO", "SCCO", "VALE", "SBSW", "CCJ", "METC", "LYSDY"]
+      "tickers": [
+        "WPM",
+        "MT",
+        "SSRM",
+        "MP",
+        "UROY",
+        "UEC",
+        "TMC",
+        "ERO",
+        "WRN",
+        "RIO",
+        "SCCO",
+        "VALE",
+        "SBSW",
+        "CCJ",
+        "METC",
+        "LYSDY"
+      ]
     },
     {
       "key": "healthcare",
       "name": "Healthcare & Biotech",
       "icon": "🏥",
-      "tickers": ["ISRG", "NVO", "HIMS", "DVA", "PRCT", "COCH", "BDTX", "SMMT", "ZENA"]
+      "tickers": [
+        "ISRG",
+        "NVO",
+        "HIMS",
+        "DVA",
+        "PRCT",
+        "COCH",
+        "BDTX",
+        "SMMT",
+        "ZENA"
+      ]
     },
     {
       "key": "consumer_brands",
       "name": "Consumer & Brands",
       "icon": "🎬",
-      "tickers": ["NFLX", "HNST", "CELH", "RDDT", "NUS", "DLPN", "ROKU", "COST"]
+      "tickers": [
+        "NFLX",
+        "HNST",
+        "CELH",
+        "RDDT",
+        "NUS",
+        "DLPN",
+        "ROKU",
+        "COST"
+      ]
     },
     {
       "key": "other",
       "name": "Other",
       "icon": "📌",
-      "tickers": ["FDX", "FLY", "USAR", "XNDU", "BIPC", "PACK", "NPKI", "WMS", "APG"]
+      "tickers": [
+        "FDX",
+        "FLY",
+        "USAR",
+        "XNDU",
+        "BIPC",
+        "PACK",
+        "NPKI",
+        "WMS",
+        "APG",
+        "AMD"
+      ]
     },
     {
       "key": "oil_gas",
       "name": "Oil & Gas",
       "icon": "⛽",
-      "tickers": ["CRGY", "PARR", "PBF", "PBR", "CSAN"]
+      "tickers": [
+        "CRGY",
+        "PARR",
+        "PBF",
+        "PBR",
+        "CSAN"
+      ]
     },
     {
       "key": "homebuilders",
       "name": "Homebuilders",
       "icon": "🏠",
-      "tickers": ["TOL", "PHM", "DHI"]
+      "tickers": [
+        "TOL",
+        "PHM",
+        "DHI"
+      ]
     }
   ]
 }

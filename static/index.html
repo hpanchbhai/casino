@@ -870,6 +870,116 @@
             </div>
         </section>
 
+        <section id="panel-index-adds" class="tab-panel index-adds-panel">
+            <div class="sectors-header">
+                <div class="earnings-title-row">
+                    <h2>📌 Index Adds / Removes</h2>
+                    <span id="index-adds-meta" class="earnings-meta"></span>
+                </div>
+                <button id="index-adds-refresh-btn" class="earnings-refresh-btn" title="Reload">🔄</button>
+            </div>
+
+            <div class="index-changes-widget">
+                <div class="index-changes-header">
+                    <div>
+                        <h3>Quarterly Index Adds / Removes</h3>
+                        <span id="index-changes-meta" class="earnings-meta"></span>
+                    </div>
+                    <div class="index-changes-controls">
+                        <select id="index-changes-index" class="index-adds-select">
+                            <option value="sp500">S&amp;P 500</option>
+                        </select>
+                        <div class="index-year-multi">
+                            <button id="index-changes-year-btn" class="cycle-mini-btn" type="button">Years</button>
+                            <div id="index-changes-year-menu" class="index-year-menu hidden"></div>
+                        </div>
+                    </div>
+                </div>
+                <div id="index-changes-body" class="index-changes-body"></div>
+            </div>
+
+            <div class="index-adds-filter-block">
+                <h3>Stock Inclusion Performance</h3>
+                <span class="earnings-meta">Filter by ticker to inspect membership and post-addition returns</span>
+            </div>
+            <div class="index-adds-controls">
+                <input id="index-adds-ticker" class="index-adds-input" type="text" placeholder="Ticker" autocomplete="off" />
+                <button id="index-adds-find-btn" class="cycle-analyze-btn">Find Index Adds</button>
+                <select id="index-adds-index" class="index-adds-select">
+                    <option value="all">Enter ticker to filter indices</option>
+                </select>
+                <button id="index-adds-saved-btn" class="cycle-mini-btn" type="button">Saved</button>
+            </div>
+            <details class="index-adds-advanced">
+                <summary>Manual fallback</summary>
+                <div class="index-adds-controls">
+                    <input id="index-adds-date" class="index-adds-input" type="date" />
+                    <input id="index-adds-benchmark" class="index-adds-input" type="text" placeholder="Benchmark ETF" autocomplete="off" />
+                    <button id="index-adds-analyze-btn" class="cycle-mini-btn">Manual Analyze</button>
+                </div>
+            </details>
+
+            <div id="index-adds-loading" class="panel-loading hidden">
+                <div class="spinner"></div>
+                <p>Calculating performance…</p>
+            </div>
+            <div id="index-adds-error" class="options-error hidden"></div>
+
+            <div id="index-adds-content" class="hidden">
+                <div class="panel-summary index-adds-summary">
+                    <div class="summary-card">
+                        <span class="summary-label">Analyzed</span>
+                        <span id="index-adds-count" class="summary-value">—</span>
+                    </div>
+                    <div class="summary-card oversold">
+                        <span class="summary-label">Best Return</span>
+                        <span id="index-adds-best" class="summary-value">—</span>
+                    </div>
+                    <div class="summary-card overbought">
+                        <span class="summary-label">Avg Return</span>
+                        <span id="index-adds-avg" class="summary-value">—</span>
+                    </div>
+                </div>
+
+                <div id="index-adds-chart-box" class="index-adds-chart-box hidden">
+                    <div id="index-adds-chart-title" class="index-adds-chart-title">Since Addition Return</div>
+                    <div class="index-adds-chart-wrap">
+                        <canvas id="index-adds-chart"></canvas>
+                    </div>
+                </div>
+
+                <div id="index-adds-price-chart-box" class="index-adds-chart-box hidden">
+                    <div id="index-adds-price-chart-title" class="index-adds-chart-title">Price Since Inclusion</div>
+                    <div class="index-adds-chart-wrap index-adds-price-chart-wrap">
+                        <canvas id="index-adds-price-chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table id="index-adds-table">
+                        <thead>
+                            <tr>
+                                <th>Ticker</th>
+                                <th>Index</th>
+                                <th>Added</th>
+                                <th>Start</th>
+                                <th>Latest</th>
+                                <th>Total Return</th>
+                                <th>Annualized</th>
+                                <th>6M</th>
+                                <th>1Y</th>
+                                <th>2Y</th>
+                                <th>Benchmark</th>
+                                <th>Excess</th>
+                            </tr>
+                        </thead>
+                        <tbody id="index-adds-body"></tbody>
+                    </table>
+                </div>
+                <p class="options-note" id="index-adds-note">Source: local daily_prices table.</p>
+            </div>
+        </section>
+
         <footer class="footer">
             <p>Data sourced via Yahoo Finance. RSI calculated using 14-day period. 5-min cache. For educational purposes only — not financial advice.</p>
         </footer>
@@ -1017,7 +1127,7 @@
 </div> <!-- /.page-layout -->
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="script.js"></script>
+    <script src="script.js?v=20260613-index-records"></script>
 
     <!-- Earnings Calendar Image Modal -->
     <div id="cal-image-modal" class="cal-modal-overlay hidden">

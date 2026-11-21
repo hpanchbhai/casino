@@ -78,6 +78,66 @@ Stocks Dashboard/
 
 The response includes: option type (Call/Put), expiry, strike, last price, bid, ask, volume, open interest, IV %, and spread.
 
+## Data storage requirements
+
+Durable dashboard data requirements are recorded in `config/data_policy.json` and implemented through the SQLite schema in `db/schema.sql`.
+User-stated product and workflow requirements are tracked over time in `config/user_requirements.md`.
+
+### Options retention policy
+
+- Store one row per contract in `option_contracts`.
+- Append every observed chain quote into `option_quotes`; do not overwrite historical quote rows.
+- Mark contracts as `expired` after expiration, but keep the contract and all quote history indefinitely.
+- Preserve expired-contract prices so the dashboard can show historical charts after expiration.
+- Store options metrics when available: underlying price, last price, bid, ask, mid, spread, volume, open interest, implied volatility, delta, gamma, theta, vega, rho, intrinsic/extrinsic value, moneyness, and ITM status.
+- Keep Greeks nullable because data sources may not provide every value on every fetch.
+
+### Dashboard interaction logging
+
+- Log dashboard usage events into `dashboard_interaction_events`.
+- Track sessions in `dashboard_sessions`.
+- Use interaction history to understand dashboard usage patterns, feature adoption, user behavior, and navigation flows.
+- Keep analytics privacy-conscious: do not store secrets, credentials, tokens, or unnecessary raw personal data.
+- Prefer hashed/coarse identifiers such as `ip_hash` over raw IP addresses.
+
+### Price history ingestion
+
+- Initial price ingestion backfills daily OHLCV from `2000-01-01` by default.
+- Later runs use `backfill_log.last_date` to fetch only missing rows.
+- If the app is stopped for several days, the next ingestion run catches up only the date gap.
+- Full re-fetches should be explicit with `--force-full`.
+- `/api/history` reads from `daily_prices` first for stored daily/weekly history, then falls back to yfinance for missing data or intraday intervals.
+
+### Index addition performance
+
+- The `Index Adds` tab analyzes how stocks performed after being added to an index.
+- Primary workflow is ticker-first: enter a ticker and the app filters the index selector to the current index lists that contain that ticker, then looks up saved index-addition records.
+- Saved events live in `index_additions`; ad hoc analysis can still be run with ticker, index, added date, and optional benchmark ETF.
+- Watchlist membership lives in `watchlist_symbols`; dashboard add/remove actions keep it synced with `data/watchlist.json`.
+- Index memberships live in `index_memberships`; index-addition events live in `index_additions`.
+- Refresh watchlist-wide index data with `python -m etl.ingest_index_data`.
+- Calculations read from `daily_prices` and include total return, annualized return, 6M/1Y/2Y forward returns, monthly/quarterly/yearly breakdowns, and optional benchmark/excess return.
+- Ticker-only lookup requires real index-addition dates to be ingested into `index_additions`.
+- API: `GET /api/index-additions/performance?ticker=AAPL&index_key=sp500&added_date=2020-01-01`
+
+Dry-run the fetch plan:
+
+```bash
+python -m etl.ingest_prices --dry-run
+```
+
+Ingest specific tickers:
+
+```bash
+python -m etl.ingest_prices --tickers AAPL MSFT NVDA
+```
+
+Ingest the full configured universe:
+
+```bash
+python -m etl.ingest_prices --universe all
+```
+
 ## Local setup
 
 ### Requirements
@@ -92,7 +152,7 @@ pip install -r requirements.txt
 ```
 python app.py
 ```
-Open http://127.0.0.1:5050 in your browser.
+Open http://127.0.0.1:5051 in your browser.
 
 ## Notes & tradeoffs
 

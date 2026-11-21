@@ -5,3 +5,6 @@ __pycache__/
 server.log
 *.log
 .env
+db/*.db
+db/*.db-shm
+db/*.db-wal

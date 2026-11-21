@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "policies": {
+    "options": {
+      "storage_model": "cumulative_append_only_quotes",
+      "contract_table": "option_contracts",
+      "quote_history_table": "option_quotes",
+      "latest_quote_view": "latest_option_quotes",
+      "retention": {
+        "contracts": "retain_indefinitely",
+        "quote_history": "retain_indefinitely"
+      },
+      "expiration_handling": {
+        "mark_expired_contracts": true,
+        "expired_status_value": "expired",
+        "retain_expired_contract_prices": true,
+        "purpose": "Allow dashboard charts and historical review after contracts expire."
+      },
+      "required_quote_fields": [
+        "underlying_price",
+        "last_trade_at",
+        "last_price",
+        "bid",
+        "ask",
+        "mid",
+        "spread",
+        "spread_pct",
+        "change",
+        "percent_change",
+        "volume",
+        "open_interest",
+        "implied_volatility",
+        "delta",
+        "gamma",
+        "theta",
+        "vega",
+        "rho",
+        "intrinsic_value",
+        "extrinsic_value",
+        "moneyness",
+        "in_the_money"
+      ],
+      "ingestion_requirements": [
+        "Upsert option_contracts by contract_symbol.",
+        "Append a new option_quotes row for every observed contract on each chain fetch.",
+        "Do not delete quote history when a contract expires.",
+        "Update option_contracts.status to expired when expiration_date has passed.",
+        "Keep Greeks nullable because not every data source provides every Greek on every fetch."
+      ]
+    },
+    "dashboard_interactions": {
+      "storage_model": "append_only_event_log",
+      "session_table": "dashboard_sessions",
+      "event_table": "dashboard_interaction_events",
+      "retention": {
+        "raw_events": "retain_1_year_minimum",
+        "aggregated_metrics": "retain_indefinitely"
+      },
+      "privacy_requirements": [
+        "Do not store passwords, tokens, credentials, or secrets.",
+        "Avoid storing raw IP addresses; store a hash or coarse location only if needed.",
+        "Keep event metadata focused on dashboard behavior, not personal content."
+      ],
+      "suggested_event_fields": [
+        "session_id",
+        "event_name",
+        "event_type",
+        "page",
+        "component",
+        "action",
+        "ticker",
+        "route",
+        "client_timestamp",
+        "server_timestamp",
+        "metadata_json"
+      ],
+      "purpose": "Understand dashboard usage patterns, user behavior, feature adoption, and navigation flows over time."
+    },
+    "price_history": {
+      "storage_model": "initial_backfill_then_incremental_catch_up",
+      "price_table": "daily_prices",
+      "metadata_table": "backfill_log",
+      "default_start_date": "2000-01-01",
+      "retention": {
+        "normalized_daily_prices": "retain_indefinitely"
+      },
+      "ingestion_command": "python -m etl.ingest_prices",
+      "ingestion_requirements": [
+        "On first run for a ticker, fetch from default_start_date through the requested end date.",
+        "On later runs, read backfill_log.last_date and fetch only last_date + 1 day through the requested end date.",
+        "If the app has been stopped for multiple days, fetch only the missing date range.",
+        "Do not re-pull full history unless --force-full is explicitly requested.",
+        "Update backfill_log after successful inserts so future runs know the latest stored date."
+      ]
+    },
+    "index_addition_performance": {
+      "storage_model": "saved_events_plus_ad_hoc_analysis",
+      "event_table": "index_additions",
+      "watchlist_table": "watchlist_symbols",
+      "watchlist_event_table": "watchlist_symbol_events",
+      "membership_table": "index_memberships",
+      "price_table": "daily_prices",
+      "api_endpoint": "/api/index-additions/performance",
+      "supported_index_keys": [
+        "sp500",
+        "nasdaq100",
+        "russell2000",
+        "dowjones",
+        "custom"
+      ],
+      "retention": {
+        "index_addition_events": "retain_indefinitely",
+        "computed_performance": "computed_from_daily_prices_on_request"
+      },
+      "requirements": [
+        "Compute performance from the first stored trading day on or after added_date.",
+        "Primary workflow should accept only a ticker and look up saved index-addition records automatically.",
+        "Filter the index selector to only supported index lists where the entered ticker is currently present.",
+        "Keep dashboard watchlist add/remove actions synced into database tables.",
+        "Do not store index-addition event data in config files.",
+        "Support ad hoc analysis by ticker, index_key, added_date, and optional benchmark_ticker as a fallback.",
+        "Support saved index-addition records from index_additions.",
+        "Report total return, annualized return, days held, 6M/1Y/2Y forward returns, since-addition return, periodic monthly/quarterly/yearly returns, and optional benchmark/excess return.",
+        "Add ingestion/source discovery for real index-addition dates before relying on ticker-only lookup."
+      ]
+    }
+  }
+}
